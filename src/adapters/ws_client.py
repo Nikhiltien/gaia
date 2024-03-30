@@ -47,6 +47,7 @@ class WebsocketClient():
         self.ws_state = SocketState.INITIALIZING
 
     async def _connect(self):
+        self.logger.debug(f"Connecting to {self.ws_name}...")
         self.ws_state = SocketState.INITIALIZING
         retries = self.retries
         if self.ws_state != SocketState.EXITING and (retries > 0 or retries == 0):
