@@ -29,6 +29,19 @@ class HyperLiquid(WebsocketClient, Adapter):
         await super()._connect()
         self.start_msg_loop()
 
+    def _handle_incoming_message(self, message):
+        channel = message.get('channel')
+        if channel == 'subscriptionResponse':
+            self._process_subscription_message(message)
+        elif channel == 'notification':
+            self._process_notification(message.get('data'))
+        elif channel == 'user':
+            self._process_user_event(message.get('data'))
+        elif channel == 'pong':
+            return
+        else:
+            self._process_normal_message(message)
+
     def _process_subscription_message(self, message):
         data = message.get("data")
         method = data.get("method")
@@ -56,25 +69,14 @@ class HyperLiquid(WebsocketClient, Adapter):
             self._process_order_book(message)
         elif "trade" in channel:
             self._process_trade(message)
-        elif "notification" in channel:
-            self.logger.info(f"HyperLiquid Status: {message}")
+        elif "orderUpdate" in channel:
+            self._process_orders(message)
         else:
             self.logger.info(f"Unrecognized channel: {message}")
             pass
             # callback_data = message
         # callback_function = self._get_callback(topic)
         # callback_function(callback_data)
-
-    def _handle_incoming_message(self, message):
-        channel = message.get('channel')
-        if channel == 'subscriptionResponse':
-            self._process_subscription_message(message)
-        elif channel == 'notification':
-            self._process_notification(message.get('data'))
-        elif channel == 'user':
-            self._process_user_event(message.get('data'))
-        else:
-            self._process_normal_message(message)
 
     def _create_subscription_message(self, method, params, req_id=None):
         message = {
@@ -125,6 +127,13 @@ class HyperLiquid(WebsocketClient, Adapter):
             }
         await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
+    async def subscribe_orders(self, user_address, req_id=None):
+        params = {
+            "type": "orderUpdates",
+            "user": user_address
+            }
+        await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
+
     async def subscribe_trades(self, contract, req_id=None):
         symbol = contract.get("symbol")
         params = {
@@ -149,6 +158,10 @@ class HyperLiquid(WebsocketClient, Adapter):
         # Process user event data
         print(f"User Event: {data}")
 
+    def _process_orders(self, data):
+        # Process user event data
+        print(f"orderEvent: {data}")
+
     def _process_order_book(self, data):
         book = data.get("data")
         print(f"Book: {book}")
@@ -171,9 +184,10 @@ async def main():
 
     await adapter.subscribe_notifications(user_address=wallet)
     await adapter.subscribe_user_events(user_address=wallet)
+    await adapter.subscribe_orders(user_address=wallet)
     # await adapter.subscribe_trades(contract=eth)
     # await adapter.subscribe_order_book(contract=eth)
-    await asyncio.sleep(75)
+    await asyncio.sleep(9999)
 
 if __name__ == "__main__":
     asyncio.run(main())
