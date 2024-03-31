@@ -157,11 +157,11 @@ class HyperLiquid(WebsocketClient, Adapter):
         print(f"Notification: {notification}")
 
     def _process_user_event(self, data):
+        print(data)
         parsed_events = []
         if 'fills' in data:
             for fill in data['fills']:
                 parsed_event = {
-                    "eventType": "Fill",
                     "coin": fill.get('coin'),
                     "price": fill.get('px'),
                     "size": fill.get('sz'),
@@ -180,9 +180,8 @@ class HyperLiquid(WebsocketClient, Adapter):
                 parsed_events.append(parsed_event)
 
         if 'liquidation' in data:
-            liquidation = data['liquidation']
+            liquidation = data.get('liquidation')
             parsed_event = {
-                "eventType": "Liquidation",
                 "liquidationID": liquidation.get('lid'),
                 "liquidator": liquidation.get('liquidator'),
                 "liquidatedUser": liquidation.get('liquidated_user'),
@@ -194,7 +193,6 @@ class HyperLiquid(WebsocketClient, Adapter):
         if 'nonUserCancel' in data:
             for cancel in data['nonUserCancel']:
                 parsed_event = {
-                    "eventType": "NonUserCancel",
                     "coin": cancel.get('coin'),
                     "orderID": cancel.get('oid')
                 }
