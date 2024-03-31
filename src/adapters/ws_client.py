@@ -4,6 +4,7 @@ import asyncio
 import logging
 import websockets
 
+from datetime import datetime, timedelta
 from enum import Enum
 
 class SocketState(Enum):
@@ -17,11 +18,11 @@ class WebsocketClient():
     MAX_RECONNECTS = 5
     MAX_RECONNECT_SECONDS = 60
     MIN_RECONNECT_WAIT = 0.1
-    TIMEOUT = 10
+    TIMEOUT = 55
     NO_MESSAGE_RECONNECT_TIMEOUT = 60
     MAX_QUEUE_SIZE = 100
 
-    def __init__(self, url, ws_name, custom_callback=None, api_key=None, api_secret=None, ping_interval=20, ping_timeout=10, retries=10):
+    def __init__(self, url, ws_name, custom_callback=None, api_key=None, api_secret=None, ping_interval=50, ping_timeout=5, retries=10):
         self.loop = asyncio.get_event_loop()
         self.logger = logging.getLogger(__name__)
         self.url = url
@@ -37,6 +38,7 @@ class WebsocketClient():
 
         self.ping_interval = ping_interval
         self.ping_timeout = ping_timeout
+        self.last_pong = None
         self.retries = retries
 
         self._is_binary = False
@@ -45,6 +47,22 @@ class WebsocketClient():
 
         self._handle_read_loop = None
         self.ws_state = SocketState.INITIALIZING
+
+    async def _ping_loop(self):
+        """Sends a ping message at the specified interval and checks for timely pong responses."""
+        while self.ws_state == SocketState.CONNECTED:
+            try:
+                await self.ws.send(json.dumps({"method": "ping"}))
+                await asyncio.sleep(self.ping_timeout)
+
+                # Check if a pong response was received within the timeout
+                if (datetime.utcnow() - self.last_pong) > timedelta(seconds=self.ping_timeout):
+                    self.logger.warning("Pong message was not received in time.")
+
+                await asyncio.sleep(self.ping_interval)
+            except Exception as e:
+                self.logger.error(f"An error occurred while sending ping: {e}")
+                return
 
     async def _connect(self):
         self.logger.debug(f"Connecting to {self.ws_name}...")
@@ -56,6 +74,8 @@ class WebsocketClient():
                     self.ws = await websockets.connect(self.url)
                     self.ws_state = SocketState.CONNECTED
                     self.retries = 0
+                    if self.ws_state == SocketState.CONNECTED:
+                        asyncio.create_task(self._ping_loop())
                     # if self.api_key and self.api_secret:
                     #     await self._authenticate()
 
@@ -107,6 +127,9 @@ class WebsocketClient():
             if message.get('channel') == 'heartbeat':
                 self.logger.debug('Heartbeat message received')
                 return None  # Filter heartbeat messages
+            elif message.get('channel') == 'pong':
+                self.last_pong = datetime.utcnow()
+                return None
             return message
         except ValueError:
             self.logger.debug(f'Error parsing evt json: {evt}')
