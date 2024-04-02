@@ -3,20 +3,23 @@ import logging
 import datetime
 import numpy as np
 
-from lob import LOB
 from typing import List
 from collections import deque
 from numpy_ringbuffer import RingBuffer
+from src.models.lob import LOB
+from src.zeromq.zeromq import ZeroMQ
 
 MAX_STEPS = 25
 MAX_DEPTH = 10
 SEQUENCE_LENGTH = 5
 
 class GameEnv:
-    def __init__(self, oms, cache, contracts: List = None, max_depth = 10, initial_cash = None, initial_inventory = None):
+    def __init__(self, oms, socket: ZeroMQ, contracts: List = None, max_depth = 10, 
+                 initial_cash = None, initial_inventory = None, cache = None):
         super().__init__()
         self.logger = logging.getLogger(__name__)
         self.oms = oms
+        self.receiver = socket
         self.cache = cache
         self.initial_cash = initial_cash if initial_cash is not None else 10_000
         self.initial_inventory = initial_inventory if initial_inventory is not None else 0

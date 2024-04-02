@@ -3,11 +3,9 @@ import asyncio
 
 from dotenv import load_dotenv
 from src.logger import setup_logger
+from src.zeromq.zeromq import ZeroMQ
+# from src.models.game_env import GameEnv
 from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
-
-# from src.adapters.HyperLiquid.endpoints import BaseEndpoints
-# from src.adapters.post_client import API
-# from src.adapters.web3_utils import Authenticator
 
 eth = {
     "symbol": "ETH",
@@ -19,7 +17,7 @@ eth = {
 order = {
     "symbol": "ETH",  # Assuming an asset index, it should be a number.
     "side": "BUY",  # Boolean should not be in quotes.
-    "price": 3000.0,  # This should be a string representing the price.
+    "price": 3150.0,  # This should be a string representing the price.
     "qty": 0.01,  # This is a string representing the size of the order.
     "reduceOnly": False,  # Boolean for whether this is a reduce-only order.
     "orderType": {
@@ -27,6 +25,12 @@ order = {
             "tif": "Gtc"  # Assuming you are setting 'Good till cancel' time-in-force.
         }
     }
+}
+
+leverage = {
+    "leverage": 50,
+    "coin": "ETH",
+    "is_cross": True
 }
 
 logging = setup_logger(level='INFO', stream=True)
@@ -48,24 +52,38 @@ async def main():
     a = await adapter.get_user_state()
     print(a)
 
+    zmq = ZeroMQ()
+
     # await adapter.subscribe_trades(contract=eth)
     # await adapter.subscribe_order_book(contract=eth)
     # await adapter.subscribe_klines(eth, "1m")
 
     # order_result = await adapter.place_order(order_details=order)
+    # print(order_result)
+    # cancel = None
+    # order_status = None
 
+    # await asyncio.sleep(3)
     # if order_result["status"] == "ok":
     #     status = order_result["response"]["data"]["statuses"][0]
     #     if "resting" in status:
     #         order_status = status["resting"]["oid"]
 
-    # cancel = {
-    #     "symbol": "ETH",
-    #     "order_id": order_status
-    # }
+    #         cancel = {
+    #             "symbol": "ETH",
+    #             "order_id": order_status
+    #         }
 
-    # await asyncio.sleep(2)
-    # await adapter.cancel_order(order_details=cancel)
+    # if cancel:
+    #     await adapter.cancel_order(order_details=cancel)
+
+    # await asyncio.sleep(5)
+
+    # leverage_response = await adapter.update_leverage(leverage)
+    # print(leverage_response)
+
+    # b = await adapter.get_user_state()
+    # print(b)
 
     await asyncio.sleep(30)
 

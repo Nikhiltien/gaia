@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+enum KnownSymbols {
+  UNKNOWN = 0;
+  SYMBOL_A = 1;
+  SYMBOL_B = 2;
+  // Add more known symbols here
+}
+
+message PriceData {
+  oneof symbol_type {
+    string symbol = 1;
+    KnownSymbols known_symbol = 4;
+  }
+  double price = 2;
+  int64 timestamp = 3; // Consider if nanosecond precision is needed
+}
+
+message VolumeData {
+  oneof symbol_type {
+    string symbol = 1;
+    KnownSymbols known_symbol = 4;
+  }
+  double volume = 2;
+  int64 timestamp = 3; // Consider if nanosecond precision is needed
+}
+
+message OrderBookEntry {
+  double price = 1;
+  double size = 2;
+}
+
+message OrderBookData {
+  string symbol = 1;
+  repeated OrderBookEntry bids = 2; // List of bids
+  repeated OrderBookEntry asks = 3; // List of asks
+  double last_trade_price = 4;      // Last traded price
+  int64 timestamp = 5;              // Timestamp for the order book snapshot
+}
