@@ -47,23 +47,24 @@ async def main():
 
     # await adapter.subscribe_trades(contract=eth)
     # await adapter.subscribe_order_book(contract=eth)
+    # await adapter.subscribe_klines(eth, "1m")
 
-    order_result = await adapter.place_order(order_details=order)
+    # order_result = await adapter.place_order(order_details=order)
 
-    if order_result["status"] == "ok":
-        status = order_result["response"]["data"]["statuses"][0]
-        if "resting" in status:
-            order_status = status["resting"]["oid"]
+    # if order_result["status"] == "ok":
+    #     status = order_result["response"]["data"]["statuses"][0]
+    #     if "resting" in status:
+    #         order_status = status["resting"]["oid"]
 
-    cancel = {
-        "symbol": "ETH",
-        "order_id": order_status
-    }
+    # cancel = {
+    #     "symbol": "ETH",
+    #     "order_id": order_status
+    # }
 
-    await asyncio.sleep(2)
-    await adapter.cancel_order(order_details=cancel)
+    # await asyncio.sleep(2)
+    # await adapter.cancel_order(order_details=cancel)
 
-    await asyncio.sleep(10)
+    await asyncio.sleep(30)
 
 if __name__ == "__main__":
     asyncio.run(main())

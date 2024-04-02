@@ -17,7 +17,7 @@ from src.adapters.ws_client import WebsocketClient
 class HyperLiquid(WebsocketClient, Adapter):
     def __init__(self, ws_name="HyperLiquid"):
         custom_callback = (self._handle_incoming_message)
-        url = "wss://api.hyperliquid.xyz/ws"
+        url = "wss://api.hyperliquid-testnet.xyz/ws"
         super().__init__(url=url, ws_name=ws_name, custom_callback=custom_callback)
 
         self._msg_loop = None
@@ -63,7 +63,7 @@ class HyperLiquid(WebsocketClient, Adapter):
     async def connect(self, key, public, vault=None):
         await super()._connect()
         self.start_msg_loop()
-        address, info, exchange = self._setup(constants.MAINNET_API_URL, skip_ws=True, key=key, address=public)
+        address, info, exchange = self._setup(constants.TESTNET_API_URL, skip_ws=True, key=key, address=public)
 
         if exchange.account_address != exchange.wallet.address:
             raise Exception("You should not create an agent using an agent")
@@ -77,11 +77,11 @@ class HyperLiquid(WebsocketClient, Adapter):
         print("Running with agent address:", agent_account.address)
 
         if vault:
-            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
                                       vault_address=vault)
             self.address = vault
         else:
-            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
                                       account_address=address)
             self.address = address
             
@@ -95,6 +95,8 @@ class HyperLiquid(WebsocketClient, Adapter):
             self._process_subscription_message(message)
         elif channel == 'notification':
             self._process_notification(message.get('data'))
+        elif channel == 'error':
+            self._process_error(message.get('data'))
         elif channel == 'user':
             self._process_user_event(message.get('data'))
         elif channel == 'pong':
@@ -124,13 +126,15 @@ class HyperLiquid(WebsocketClient, Adapter):
     def _process_normal_message(self, message):
         channel = message.get("channel")
         if channel is None:
-            self.logger.debug(f"HyperLiquid System Msg: {message}")
+            print(f"HyperLiquid System Msg: {message}")
+        elif "orderUpdates" in channel:
+            self._process_orders(message)
         elif "l2Book" in channel:
             self._process_order_book(message)
         elif "trade" in channel:
             self._process_trade(message)
-        elif "orderUpdates" in channel:
-            self._process_orders(message)
+        elif "candle" in channel:
+            self._process_candle(message)
         else:
             self.logger.info(f"Unrecognized channel: {message}")
             pass
@@ -201,7 +205,32 @@ class HyperLiquid(WebsocketClient, Adapter):
         
         return result
 
-    # Similarly implement methods for modify order, update leverage, and update isolated margin
+    async def modify_order(self, modify_details: Dict):
+        response = self.exchange.modify_order(
+            oid=modify_details.get("order_id"),
+            coin=modify_details.get("coin"),
+            is_buy=modify_details.get("is_buy"),
+            sz=modify_details.get("size"),
+            limit_px=modify_details.get("limit_price"),
+            order_type=modify_details.get("order_type"),
+            reduce_only=modify_details.get("reduce_only", False)
+        )
+        return response
+
+    async def update_leverage(self, leverage_details: Dict):
+        response = self.exchange.update_leverage(
+            leverage=leverage_details.get("leverage"),
+            coin=leverage_details.get("coin"),
+            is_cross=leverage_details.get("is_cross", True)
+        )
+        return response
+
+    async def update_isolated_margin(self, margin_details: Dict):
+        response = self.exchange.update_isolated_margin(
+            amount=margin_details.get("amount"),
+            coin=margin_details.get("coin")
+        )
+        return response
 
     async def subscribe_notifications(self, user_address=None, req_id=None):
         if user_address is None: user_address = self.address
@@ -243,9 +272,22 @@ class HyperLiquid(WebsocketClient, Adapter):
             }
         return await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
+    async def subscribe_klines(self, contract, interval, req_id=None):
+        symbol = contract.get("symbol")
+        params = {
+            "type": "candle",
+            "coin": symbol,
+            "interval": str(interval)
+        }
+        return await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
+
     def _process_notification(self, data):
         notification = data.get("notification")
         print(f"Notification: {notification}")
+
+    def _process_error(self, data):
+        error = data.get("error")
+        print(f"Error: {error}")
 
     def _process_user_event(self, data):
         print(data)
@@ -354,3 +396,22 @@ class HyperLiquid(WebsocketClient, Adapter):
                 "trade_id": trade["tid"]
             })
         print(f"Trades: {trades}")
+
+    def _process_candle(self, message):
+        # Directly access 'data' as it already represents a single candle.
+        candle_data = message.get('data', {})
+
+        parsed_candle = {
+            'open_timestamp': candle_data.get('t'),
+            'close_timestamp': candle_data.get('T'),
+            'symbol': candle_data.get('s'),
+            'interval': candle_data.get('i'),
+            'open': float(candle_data.get('o')),
+            'close': float(candle_data.get('c')),
+            'high': float(candle_data.get('h')),
+            'low': float(candle_data.get('l')),
+            'volume': float(candle_data.get('v')),
+            'num_trades': candle_data.get('n')
+        }
+
+        print(f"Candle: {parsed_candle}")
