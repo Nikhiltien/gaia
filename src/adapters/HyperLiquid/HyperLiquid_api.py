@@ -4,21 +4,20 @@ import time
 import asyncio
 
 import eth_account
+from eth_account.signers.local import LocalAccount
 from hyperliquid.utils import constants
 from hyperliquid.info import Info
 from hyperliquid.exchange import Exchange
-from eth_account.signers.local import LocalAccount
 
 from typing import List, Dict
 from src.adapters.base_adapter import Adapter
 from src.adapters.ws_client import WebsocketClient
-from src.adapters.HyperLiquid.utils import setup
 
 
 class HyperLiquid(WebsocketClient, Adapter):
     def __init__(self, ws_name="HyperLiquid"):
         custom_callback = (self._handle_incoming_message)
-        url = "wss://api.hyperliquid-testnet.xyz/ws"
+        url = "wss://api.hyperliquid.xyz/ws"
         super().__init__(url=url, ws_name=ws_name, custom_callback=custom_callback)
 
         self._msg_loop = None
@@ -30,6 +29,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         self.exchange = None
 
         self.subscriptions = {}
+        self.active_orders = {}
 
     def start_msg_loop(self):
         self._msg_loop = asyncio.create_task(self._read_msg_task())
@@ -40,11 +40,30 @@ class HyperLiquid(WebsocketClient, Adapter):
                 await self.recv()
         except asyncio.CancelledError:
             pass
+    
+    @staticmethod
+    def _setup(base_url=None, skip_ws=False, key=None, address=None):
+        account: LocalAccount = eth_account.Account.from_key(key)
+        if address == "":
+            address = account.address
+        print("Running with account address:", address)
+        if address != account.address:
+            print("Running with agent address:", account.address)
+        info = Info(base_url, skip_ws)
+        user_state = info.user_state(address)
+        margin_summary = user_state["marginSummary"]
+        if float(margin_summary["accountValue"]) == 0:
+            print("Not running because the provided account has no equity.")
+            url = info.base_url.split(".", 1)[1]
+            error_string = f"No accountValue:\nIf you think this is a mistake, make sure that {address} has a balance on {url}.\nIf address shown is your API wallet address, update the config to specify the address of your account, not the address of the API wallet."
+            raise Exception(error_string)
+        exchange = Exchange(account, base_url, account_address=address)
+        return address, info, exchange
 
-    async def connect(self, key, public):
+    async def connect(self, key, public, vault=None):
         await super()._connect()
         self.start_msg_loop()
-        address, info, exchange = setup(constants.TESTNET_API_URL, skip_ws=True, key=key, address=public)
+        address, info, exchange = self._setup(constants.MAINNET_API_URL, skip_ws=True, key=key, address=public)
 
         if exchange.account_address != exchange.wallet.address:
             raise Exception("You should not create an agent using an agent")
@@ -56,13 +75,19 @@ class HyperLiquid(WebsocketClient, Adapter):
         
         agent_account: LocalAccount = eth_account.Account.from_key(agent_key)
         print("Running with agent address:", agent_account.address)
-        agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
-                                  account_address=address)
 
-        self.logger.info(f"Connected to HyperLiquid.")
-        self.address = address
+        if vault:
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
+                                      vault_address=vault)
+            self.address = vault
+        else:
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
+                                      account_address=address)
+            self.address = address
+            
         self.info = info
         self.exchange = agent_exchange
+        self.logger.info(f"Connected to HyperLiquid.")
 
     def _handle_incoming_message(self, message):
         channel = message.get('channel')

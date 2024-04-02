@@ -36,9 +36,10 @@ async def main():
     load_dotenv(dotenv_path=env_path)
     PRIVATE_KEY = os.getenv('PRIVATE_KEY_MAIN')
     public = '0x7195d5fBC22Afa1FF6A0A25591285Db7a81838D4'
+    vault = '0xb22177120b2f33d39770a25993bcb14f2753bae6'
 
     adapter = HyperLiquid()
-    await adapter.connect(key=PRIVATE_KEY, public=public)
+    await adapter.connect(key=PRIVATE_KEY, public=public, vault=vault)
 
     await adapter.subscribe_notifications()
     await adapter.subscribe_user_events()
@@ -59,10 +60,10 @@ async def main():
         "order_id": order_status
     }
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(2)
     await adapter.cancel_order(order_details=cancel)
 
-    await asyncio.sleep(9999)
+    await asyncio.sleep(10)
 
 if __name__ == "__main__":
     asyncio.run(main())
