@@ -177,6 +177,49 @@ class HyperLiquid(WebsocketClient, Adapter):
             except Exception as e:
                 self.logger.error(f"Error unsubscribing from {channel} channel: {e}")
 
+    async def get_user_state(self, user_details: Dict=None):
+        if user_details is None:
+            address = self.address
+        else: 
+            address = user_details.get("address")
+        response = self.info.user_state(address)
+        return response
+
+    async def get_spot_user_state(self, user_details: Dict=None):
+        if user_details is None:
+            address = self.address
+        else: 
+            address = user_details.get("address")
+        response = self.info.spot_user_state(address)
+        return response
+
+    async def get_all_mids(self):
+        response = self.info.all_mids()
+        return response
+
+    async def get_user_fills(self, user_details: Dict):
+        if user_details is None:
+            address = self.address
+        else: 
+            address = user_details.get("address")
+        response = self.info.user_fills(address)
+        return response
+
+    async def query_order_status_by_oid(self, order_details: Dict):
+        response = self.info.query_order_by_oid(
+            user=order_details.get("user"),
+            oid=order_details.get("oid")
+        )
+        return response
+
+    async def get_meta(self):
+        response = self.info.meta()
+        return response
+
+    async def get_spot_meta(self):
+        response = self.info.spot_meta()
+        return response
+
     async def place_order(self, order_details: Dict):
         symbol = order_details.get("symbol")
         side = order_details.get("side").upper() == "BUY"
@@ -271,6 +314,15 @@ class HyperLiquid(WebsocketClient, Adapter):
             "coin": symbol
             }
         return await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
+
+    async def get_klines(self, candle_details: Dict):
+        response = self.info.candles_snapshot(
+            coin=candle_details.get("coin"),
+            interval=candle_details.get("interval"),
+            startTime=candle_details.get("startTime"),
+            endTime=candle_details.get("endTime")
+        )
+        return response
 
     async def subscribe_klines(self, contract, interval, req_id=None):
         symbol = contract.get("symbol")

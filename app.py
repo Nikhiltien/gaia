@@ -19,7 +19,7 @@ eth = {
 order = {
     "symbol": "ETH",  # Assuming an asset index, it should be a number.
     "side": "BUY",  # Boolean should not be in quotes.
-    "price": 3200.0,  # This should be a string representing the price.
+    "price": 3000.0,  # This should be a string representing the price.
     "qty": 0.01,  # This is a string representing the size of the order.
     "reduceOnly": False,  # Boolean for whether this is a reduce-only order.
     "orderType": {
@@ -39,11 +39,14 @@ async def main():
     vault = '0xb22177120b2f33d39770a25993bcb14f2753bae6'
 
     adapter = HyperLiquid()
-    await adapter.connect(key=PRIVATE_KEY, public=public, vault=vault)
+    await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
 
     await adapter.subscribe_notifications()
     await adapter.subscribe_user_events()
     await adapter.subscribe_orders()
+
+    a = await adapter.get_user_state()
+    print(a)
 
     # await adapter.subscribe_trades(contract=eth)
     # await adapter.subscribe_order_book(contract=eth)
