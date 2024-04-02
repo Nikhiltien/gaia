@@ -5,6 +5,7 @@ import numpy as np
 
 from lob import LOB
 from typing import List
+from collections import deque
 from numpy_ringbuffer import RingBuffer
 
 MAX_STEPS = 25
@@ -17,9 +18,9 @@ class GameEnv:
         self.logger = logging.getLogger(__name__)
         self.oms = oms
         self.cache = cache
-        self.max_depth = max_depth
         self.initial_cash = initial_cash if initial_cash is not None else 10_000
         self.initial_inventory = initial_inventory if initial_inventory is not None else 0
+        self.max_depth = max_depth
 
         # State components
         self.subscriber = None # updates state
@@ -30,8 +31,14 @@ class GameEnv:
         self.cash = initial_cash
         self.margin = False
         self.inventory = initial_inventory
+        self.inventory_delta = 0
+        self.volatility_value = 0
         self.order_books = {}
+        
+        self.klines = RingBuffer(capacity=500, dtype=(float, 7))
+        self.trades = RingBuffer(capacity=1000, dtype=(float, 4))
         self.active_orders = []
+        self.executions = deque(maxlen=100)
         self.current_step = 0
 
     @property

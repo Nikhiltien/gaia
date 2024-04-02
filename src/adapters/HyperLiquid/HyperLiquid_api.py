@@ -1,19 +1,34 @@
 import json
 import random
+import time
 import asyncio
-import logging
+
+import eth_account
+from hyperliquid.utils import constants
+from hyperliquid.info import Info
+from hyperliquid.exchange import Exchange
+from eth_account.signers.local import LocalAccount
 
 from typing import List, Dict
-from base_adapter import Adapter
-from ws_client import WebsocketClient
+from src.adapters.base_adapter import Adapter
+from src.adapters.ws_client import WebsocketClient
+from src.adapters.HyperLiquid.utils import setup
+
 
 class HyperLiquid(WebsocketClient, Adapter):
-    def __init__(self, ws_name="HyperLiquid", api_key=None, api_secret=None, **kwargs):
+    def __init__(self, ws_name="HyperLiquid"):
         custom_callback = (self._handle_incoming_message)
-        url = "wss://api.hyperliquid.xyz/ws"
-        super().__init__(url=url, ws_name=ws_name, custom_callback=custom_callback, **kwargs)
+        url = "wss://api.hyperliquid-testnet.xyz/ws"
+        super().__init__(url=url, ws_name=ws_name, custom_callback=custom_callback)
 
         self._msg_loop = None
+        self.headers = {"Content-Type": "application/json"}
+        self.base_url = 'https://api.hyperliquid.xyz'
+
+        self.address = None
+        self.info = None
+        self.exchange = None
+
         self.subscriptions = {}
 
     def start_msg_loop(self):
@@ -26,10 +41,28 @@ class HyperLiquid(WebsocketClient, Adapter):
         except asyncio.CancelledError:
             pass
 
-    async def connect(self):
+    async def connect(self, key, public):
         await super()._connect()
         self.start_msg_loop()
+        address, info, exchange = setup(constants.TESTNET_API_URL, skip_ws=True, key=key, address=public)
+
+        if exchange.account_address != exchange.wallet.address:
+            raise Exception("You should not create an agent using an agent")
+        
+        approve_result, agent_key = exchange.approve_agent()
+        if approve_result["status"] != "ok":
+            print("approving agent failed", approve_result)
+            return
+        
+        agent_account: LocalAccount = eth_account.Account.from_key(agent_key)
+        print("Running with agent address:", agent_account.address)
+        agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
+                                  account_address=address)
+
         self.logger.info(f"Connected to HyperLiquid.")
+        self.address = address
+        self.info = info
+        self.exchange = agent_exchange
 
     def _handle_incoming_message(self, message):
         channel = message.get('channel')
@@ -115,21 +148,54 @@ class HyperLiquid(WebsocketClient, Adapter):
             except Exception as e:
                 self.logger.error(f"Error unsubscribing from {channel} channel: {e}")
 
-    async def subscribe_notifications(self, user_address, req_id=None):
+    async def place_order(self, order_details: Dict):
+        symbol = order_details.get("symbol")
+        side = order_details.get("side").upper() == "BUY"
+        price = float(order_details.get("price"))
+        qty = float(order_details.get("qty"))
+        
+        order_type = None
+        if 'orderType' in order_details and 'limit' in order_details['orderType']:
+            order_type = {
+                'limit': {
+                    'tif': order_details['orderType']['limit'].get('tif', 'Gtc')
+                }
+            }
+
+        reduce_only = order_details.get("reduceOnly", False)
+        
+        result = self.exchange.order(coin=symbol, is_buy=side, sz=qty, limit_px=price, 
+                                 order_type=order_type, reduce_only=reduce_only)
+        
+        return result
+
+    async def cancel_order(self, order_details):
+        symbol = order_details.get("symbol")
+        order_id = int(order_details.get("order_id"))
+        result = self.exchange.cancel(coin=symbol, oid=order_id)
+        
+        return result
+
+    # Similarly implement methods for modify order, update leverage, and update isolated margin
+
+    async def subscribe_notifications(self, user_address=None, req_id=None):
+        if user_address is None: user_address = self.address
         params = {
             "type": "notification", 
             "user": user_address
             }
         await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
-    async def subscribe_user_events(self, user_address, req_id=None):
+    async def subscribe_user_events(self, user_address=None, req_id=None):
+        if user_address is None: user_address = self.address
         params = {
             "type": "userEvents", 
             "user": user_address
             }
         await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
-    async def subscribe_orders(self, user_address, req_id=None):
+    async def subscribe_orders(self, user_address=None, req_id=None):
+        if user_address is None: user_address = self.address
         params = {
             "type": "orderUpdates",
             "user": user_address
@@ -166,7 +232,7 @@ class HyperLiquid(WebsocketClient, Adapter):
                     "price": fill.get('px'),
                     "size": fill.get('sz'),
                     "side": fill.get('side'),
-                    "time": fill.get('time'),
+                    "timestamp": fill.get('time'),
                     "startPosition": fill.get('startPosition'),
                     "direction": fill.get('dir'),
                     "closedPnL": fill.get('closedPnl'),
@@ -197,6 +263,18 @@ class HyperLiquid(WebsocketClient, Adapter):
                     "orderID": cancel.get('oid')
                 }
                 parsed_events.append(parsed_event)
+
+        if 'funding' in data:
+            funding = data.get('funding')
+            parsed_event = {
+                "timestamp": funding.get('time'),
+                "coin": funding.get('coin'),
+                "usdc": funding.get('usdc'),
+                "szi": funding.get('szi'),
+                "fundingRate": funding.get('fundingRate'),
+                "nSamples": funding.get('nSamples')
+            }
+            parsed_events.append(parsed_event)
 
         print(f"User Events: {parsed_events}")
 
@@ -251,25 +329,3 @@ class HyperLiquid(WebsocketClient, Adapter):
                 "trade_id": trade["tid"]
             })
         print(f"Trades: {trades}")
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-eth = {
-    "symbol": "ETH",
-}
-
-wallet = '0x7195d5fBC22Afa1FF6A0A25591285Db7a81838D4'
-
-async def main():
-    adapter = HyperLiquid()
-    await adapter.connect()
-
-    await adapter.subscribe_notifications(user_address=wallet)
-    await adapter.subscribe_user_events(user_address=wallet)
-    await adapter.subscribe_orders(user_address=wallet)
-    # await adapter.subscribe_trades(contract=eth)
-    # await adapter.subscribe_order_book(contract=eth)
-    await asyncio.sleep(9999)
-
-if __name__ == "__main__":
-    asyncio.run(main())
