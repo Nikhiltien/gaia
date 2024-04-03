@@ -35,7 +35,7 @@ class GameEnv:
 
         self.step = 0
         self.cash = 0
-        self.inventory = []
+        self.inventory = {}
         self.inventory_delta = 0
         self.inventory_vol = 0
         self.active_orders = {}
@@ -66,6 +66,7 @@ class GameEnv:
                 self._handle_message(topic, message)
 
     def _handle_message(self, topic: str, data: dict):
+        # print(f"topic: {topic}, data: {data}")
         if topic not in ['order_book', 'trades', 'kline', 'account', 'orders', 'fills', 'liquidations', 'sync']:
             self.logger.error(f"Unknown data type: {topic}")
             return
@@ -94,20 +95,28 @@ class GameEnv:
             account_info, active_orders = data
             self._process_account(account_info)
             self._process_orders(active_orders)
+            self.ready = True
         else:
-            self.logger.error(f"Unhandled data type: {topic}")
+            self.logger.warning(f"Unhandled data type: {topic}")
 
         # Update game state based on new data
         # self.update_game_state()
 
     def _process_account(self, data):
         self.cash = float(data.get('cash_balance', 0))
-        self.inventory = []
-        for position in data.get('positions', []):
-            self.inventory.append((position['symbol'], 
-                                   float(position['qty']), 
-                                   float(position['mark']), 
-                                   float(position['leverage'])))
+
+        # Check if there are positions in the account data before updating the inventory
+        if 'positions' in data and data['positions']:
+            new_inventory = {}
+
+            for position in data['positions']:
+                symbol = position['symbol']
+                qty = float(position['qty'])
+                avg_price = float(position['avg_price'])
+                if qty != 0:
+                    new_inventory[symbol] = {'qty': qty, 'avg_price': avg_price}
+            # Only update the main inventory if there are new positions
+            self.inventory = new_inventory
 
     def _process_orders(self, data):
         for order in data:
@@ -120,23 +129,61 @@ class GameEnv:
                 if not current_order or current_order != order:
                     self.active_orders[order_id] = order
 
-    def _process_fills(self, data):
-        for fill in data.get('fills', []):
-            self.executions.append(fill)
-            quantity = float(fill['qty'])
-            if fill['side'].lower() == 'buy':
-                self.inventory.append((quantity, float(fill['price'])))
-            elif fill['side'].lower() == 'sell':
-                # Assuming sell orders reduce the oldest buy positions first (FIFO).
-                remaining_qty = quantity
-                while remaining_qty > 0 and self.inventory:
-                    inv_qty, inv_price = self.inventory[0]
-                    if inv_qty > remaining_qty:
-                        self.inventory[0] = (inv_qty - remaining_qty, inv_price)
-                        remaining_qty = 0
-                    else:
-                        self.inventory.pop(0)
-                        remaining_qty -= inv_qty
+    def _process_fills(self, fill):
+        # Append fill record to executions.
+        self.executions.append(fill)
+
+        # Deduct the fee from cash.
+        fee = float(fill['fee'])
+        self.cash -= fee
+
+        symbol = fill['symbol']
+        qty = float(fill['qty'])
+        price = float(fill['price'])
+        side = fill['side']
+
+        # Initialize the inventory for new symbols.
+        if symbol not in self.inventory:
+            self.inventory[symbol] = {'qty': 0, 'avg_price': 0}
+
+        inventory_item = self.inventory[symbol]
+        current_qty = inventory_item['qty']
+        current_avg_price = inventory_item['avg_price']
+
+        if side == 'B':  # Adjust for buy
+            updated_qty = current_qty + qty
+            if updated_qty != 0:
+                updated_avg_price = (current_avg_price * current_qty + price * qty) / updated_qty
+            else:
+                updated_avg_price = 0  # In case updated_qty results in zero
+        else:  # Adjust for sell
+            updated_qty = current_qty - qty
+            updated_avg_price = current_avg_price  # Average price remains unchanged for sell
+
+        # Update inventory if quantity is non-zero; remove otherwise.
+        if updated_qty != 0:
+            self.inventory[symbol] = {'qty': updated_qty, 'avg_price': updated_avg_price}
+        else:
+            del self.inventory[symbol]
+
+    def _process_account(self, data):
+        self.cash = float(data.get('cash_balance', 0))
+
+        # Process positions only if they exist.
+        if 'positions' in data and data['positions']:
+            new_inventory = {}
+
+            for position in data['positions']:
+                symbol = position['symbol']
+                qty = float(position['qty'])
+                avg_price = float(position['avg_price'])  # Confirm this key exists and is correct.
+
+                # Only add the position to the new inventory if the quantity is non-zero.
+                if qty != 0:
+                    new_inventory[symbol] = {'qty': qty, 'avg_price': avg_price}
+
+            # Update the inventory only if there are positions.
+            self.inventory = new_inventory
     
     def _process_liquidations(self, data):
         # Handle liquidation events, possibly adjusting game state or ending episode

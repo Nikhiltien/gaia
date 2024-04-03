@@ -202,7 +202,7 @@ class HyperLiquid(WebsocketClient, Adapter):
                     "symbol": position["position"]["coin"],
                     "qty": position["position"]["szi"],
                     "leverage": position["position"]["leverage"]["value"],
-                    "mark": position["position"]["entryPx"],
+                    "avg_price": position["position"]["entryPx"],
                 })
 
         return parsed_data
@@ -418,7 +418,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         if 'fills' in data:
             for fill in data['fills']:
                 parsed_event = {
-                    "coin": fill.get('coin'),
+                    "symbol": fill.get('coin'),
                     "price": fill.get('px'),
                     "qty": fill.get('sz'),
                     "side": fill.get('side'),
@@ -461,9 +461,9 @@ class HyperLiquid(WebsocketClient, Adapter):
             funding = data.get('funding')
             parsed_event = {
                 "timestamp": funding.get('time'),
-                "coin": funding.get('coin'),
+                "symbol": funding.get('coin'),
                 "usdc": funding.get('usdc'),
-                "szi": funding.get('szi'),
+                "qty": funding.get('szi'),
                 "fundingRate": funding.get('fundingRate'),
                 "nSamples": funding.get('nSamples')
             }

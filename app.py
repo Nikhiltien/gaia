@@ -17,6 +17,19 @@ eth = {
 order = {
     "symbol": "ETH",
     "side": "BUY",
+    "price": 3350.0,
+    "qty": 0.01,
+    "reduceOnly": False,
+    "orderType": {
+        "limit": {
+            "tif": "Gtc"
+        }
+    }
+}
+
+order2 = {
+    "symbol": "ETH",
+    "side": "SELL",
     "price": 3100.0,
     "qty": 0.01,
     "reduceOnly": False,
@@ -58,20 +71,19 @@ async def main():
     adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
     await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
 
-    order_result = await adapter.place_order(order_details=order)
-    await adapter.place_order(order_details=order)
-
-    await asyncio.sleep(5)
-
     env = GameEnv(recv_socket=sub_socket, send_socket=dealer_socket, 
                   contracts=["BTC", "ETH", "SOL"], max_depth=10)
     env.initialize()
 
+    await asyncio.sleep(5)
     asyncio.create_task(monitor(env=env))
 
-    await adapter.subscribe_trades(contract=eth)
+    # await adapter.subscribe_trades(contract=eth)
     # await adapter.subscribe_order_book(contract=eth)
     # await adapter.subscribe_klines(eth, "1m")
+
+    order_result = await adapter.place_order(order_details=order)
+    # await adapter.place_order(order_details=order)
 
     cancel = None
     order_status = None
@@ -90,8 +102,8 @@ async def main():
     # if cancel:
     #     await adapter.cancel_order(order_details=cancel)
 
-    await adapter.place_order(order_details=order)
-    await asyncio.sleep(65)
+    await adapter.place_order(order_details=order2)
+    await asyncio.sleep(35)
 
     await adapter.cancel_all_orders()
 
