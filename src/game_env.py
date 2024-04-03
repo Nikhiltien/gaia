@@ -66,7 +66,7 @@ class GameEnv:
                 self._handle_message(topic, message)
 
     def _handle_message(self, topic: str, data: dict):
-        if topic not in ['order_book', 'trades', 'kline', 'account', 'orders', 'fills', 'liquidations']:
+        if topic not in ['order_book', 'trades', 'kline', 'account', 'orders', 'fills', 'liquidations', 'sync']:
             self.logger.error(f"Unknown data type: {topic}")
             return
 
@@ -90,6 +90,10 @@ class GameEnv:
             self._process_fills(data)
         elif topic == 'liquidations':
             self._process_liquidations(data)
+        elif topic == 'sync' and not self.ready:
+            account_info, active_orders = data
+            self._process_account(account_info)
+            self._process_orders(active_orders)
         else:
             self.logger.error(f"Unhandled data type: {topic}")
 
@@ -97,7 +101,13 @@ class GameEnv:
         # self.update_game_state()
 
     def _process_account(self, data):
-        self.cash = float(data.get('balance', 0))
+        self.cash = float(data.get('cash_balance', 0))
+        self.inventory = []
+        for position in data.get('positions', []):
+            self.inventory.append((position['symbol'], 
+                                   float(position['qty']), 
+                                   float(position['mark']), 
+                                   float(position['leverage'])))
 
     def _process_orders(self, data):
         for order in data:
@@ -109,16 +119,24 @@ class GameEnv:
                 current_order = self.active_orders.get(order_id)
                 if not current_order or current_order != order:
                     self.active_orders[order_id] = order
-    
+
     def _process_fills(self, data):
-        # Update executions and inventory from filled orders
         for fill in data.get('fills', []):
             self.executions.append(fill)
-            if fill.get('side') == 'buy':
-                self.inventory.append((fill.get('qty'), fill.get('price')))
-            elif fill.get('side') == 'sell':
-                # Remove from inventory or adjust quantity. Implement based on your logic.
-                pass
+            quantity = float(fill['qty'])
+            if fill['side'].lower() == 'buy':
+                self.inventory.append((quantity, float(fill['price'])))
+            elif fill['side'].lower() == 'sell':
+                # Assuming sell orders reduce the oldest buy positions first (FIFO).
+                remaining_qty = quantity
+                while remaining_qty > 0 and self.inventory:
+                    inv_qty, inv_price = self.inventory[0]
+                    if inv_qty > remaining_qty:
+                        self.inventory[0] = (inv_qty - remaining_qty, inv_price)
+                        remaining_qty = 0
+                    else:
+                        self.inventory.pop(0)
+                        remaining_qty -= inv_qty
     
     def _process_liquidations(self, data):
         # Handle liquidation events, possibly adjusting game state or ending episode

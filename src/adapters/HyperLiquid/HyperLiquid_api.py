@@ -17,7 +17,7 @@ from src.adapters.ws_client import WebsocketClient
 class HyperLiquid(WebsocketClient, Adapter):
     def __init__(self, msg_callback=None, ws_name="HyperLiquid"):
         custom_callback = (self._handle_incoming_message)
-        url = "wss://api.hyperliquid-testnet.xyz/ws"
+        url = "wss://api.hyperliquid.xyz/ws"
         super().__init__(url=url, ws_name=ws_name, custom_callback=custom_callback)
 
         self._msg_loop = None
@@ -64,7 +64,7 @@ class HyperLiquid(WebsocketClient, Adapter):
     async def connect(self, key, public, vault=None):
         await super()._connect()
         self.start_msg_loop()
-        address, info, exchange = self._setup(constants.TESTNET_API_URL, skip_ws=True, key=key, address=public)
+        address, info, exchange = self._setup(constants.MAINNET_API_URL, skip_ws=True, key=key, address=public)
 
         if exchange.account_address != exchange.wallet.address:
             raise Exception("You should not create an agent using an agent")
@@ -78,11 +78,11 @@ class HyperLiquid(WebsocketClient, Adapter):
         print("Running with agent address:", agent_account.address)
 
         if vault:
-            agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
                                       vault_address=vault)
             self.address = vault
         else:
-            agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
                                       account_address=address)
             self.address = address
             
@@ -90,7 +90,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         self.exchange = agent_exchange
         self.logger.info(f"Connected to HyperLiquid.")
 
-        await self.subscribe_all_user()
+        asyncio.create_task(self.subscribe_all_user(interval=60))
 
     def _handle_incoming_message(self, message):
         channel = message.get('channel')
@@ -186,7 +186,26 @@ class HyperLiquid(WebsocketClient, Adapter):
         else: 
             address = user_details.get("address")
         response = self.info.user_state(address)
-        return response
+        parsed_response = self._parse_user_state(response)
+        return parsed_response
+
+    @staticmethod
+    def _parse_user_state(response: dict) -> dict:
+        parsed_data = {
+            "positions": [],
+            "cash_balance": response["crossMarginSummary"]["accountValue"]
+        }
+
+        for position in response["assetPositions"]:
+            if 'position' in position:
+                parsed_data["positions"].append({
+                    "symbol": position["position"]["coin"],
+                    "qty": position["position"]["szi"],
+                    "leverage": position["position"]["leverage"]["value"],
+                    "mark": position["position"]["entryPx"],
+                })
+
+        return parsed_data
 
     async def get_spot_user_state(self, user_details: Dict=None):
         if user_details is None:
@@ -196,11 +215,44 @@ class HyperLiquid(WebsocketClient, Adapter):
         response = self.info.spot_user_state(address)
         return response
 
+    async def get_open_orders(self, user_details: Dict=None):
+        if user_details is None:
+            address = self.address
+        else: 
+            address = user_details.get("address")
+        response = self.info.open_orders(address)
+        open_orders = []
+        for order in response:
+            open_orders.append({
+                "symbol": order["coin"],
+                "side": "BUY" if order["side"] == "B" else "SELL",
+                "price": order["limitPx"],
+                "qty": order["sz"],
+                "order_id": order["oid"],
+                "timestamp": order["timestamp"]
+            })
+
+        return open_orders
+
+    async def cancel_all_orders(self, user_details: Dict=None):
+        open_orders = await self.get_open_orders(user_details)
+
+        # Iterating through the open orders and canceling each one
+        cancellation_results = []
+        for order in open_orders:
+            result = await self.cancel_order({
+                "symbol": order["symbol"],
+                "order_id": order["order_id"]
+            })
+            cancellation_results.append(result)
+
+        return cancellation_results
+
     async def get_all_mids(self):
         response = self.info.all_mids()
         return response
 
-    async def get_user_fills(self, user_details: Dict):
+    async def get_user_fills(self, user_details: Dict=None):
         if user_details is None:
             address = self.address
         else: 
@@ -278,10 +330,20 @@ class HyperLiquid(WebsocketClient, Adapter):
         )
         return response
 
-    async def subscribe_all_user(self):
+    async def subscribe_all_user(self, interval=60):
         await self.subscribe_notifications()
         await self.subscribe_user_events()
         await self.subscribe_orders()
+
+        while True:
+            data = []
+            user_state = await self.get_user_state()
+            open_orders = await self.get_open_orders()
+            data.append(user_state)
+            data.append(open_orders)
+            if self.msg_callback:
+                self.msg_callback("sync", data)
+            await asyncio.sleep(interval)
 
     async def subscribe_notifications(self, user_address=None, req_id=None):
         if user_address is None: user_address = self.address
@@ -419,7 +481,7 @@ class HyperLiquid(WebsocketClient, Adapter):
             order = order_data.get('order', {})
             parsed_order = {
                 "symbol": order.get('coin'),
-                "side": order.get('side') == 'B' and "buy" or "sell",
+                "side": order.get('side') == 'B' and "BUY" or "SELL",
                 "price": order.get('limitPx'),
                 "qty": order.get('sz'),
                 "order_id": order.get('oid'),
