@@ -15,7 +15,7 @@ from src.adapters.ws_client import WebsocketClient
 
 
 class HyperLiquid(WebsocketClient, Adapter):
-    def __init__(self, ws_name="HyperLiquid"):
+    def __init__(self, msg_callback=None, ws_name="HyperLiquid"):
         custom_callback = (self._handle_incoming_message)
         url = "wss://api.hyperliquid-testnet.xyz/ws"
         super().__init__(url=url, ws_name=ws_name, custom_callback=custom_callback)
@@ -28,6 +28,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         self.info = None
         self.exchange = None
 
+        self.msg_callback = msg_callback
         self.subscriptions = {}
         self.active_orders = {}
 
@@ -88,6 +89,8 @@ class HyperLiquid(WebsocketClient, Adapter):
         self.info = info
         self.exchange = agent_exchange
         self.logger.info(f"Connected to HyperLiquid.")
+
+        await self.subscribe_all_user()
 
     def _handle_incoming_message(self, message):
         channel = message.get('channel')
@@ -253,7 +256,7 @@ class HyperLiquid(WebsocketClient, Adapter):
             oid=modify_details.get("order_id"),
             coin=modify_details.get("coin"),
             is_buy=modify_details.get("is_buy"),
-            sz=modify_details.get("size"),
+            sz=modify_details.get("qty"),
             limit_px=modify_details.get("limit_price"),
             order_type=modify_details.get("order_type"),
             reduce_only=modify_details.get("reduce_only", False)
@@ -274,6 +277,11 @@ class HyperLiquid(WebsocketClient, Adapter):
             coin=margin_details.get("coin")
         )
         return response
+
+    async def subscribe_all_user(self):
+        await self.subscribe_notifications()
+        await self.subscribe_user_events()
+        await self.subscribe_orders()
 
     async def subscribe_notifications(self, user_address=None, req_id=None):
         if user_address is None: user_address = self.address
@@ -342,14 +350,15 @@ class HyperLiquid(WebsocketClient, Adapter):
         print(f"Error: {error}")
 
     def _process_user_event(self, data):
-        print(data)
+        # print(data)
+        topic = None
         parsed_events = []
         if 'fills' in data:
             for fill in data['fills']:
                 parsed_event = {
                     "coin": fill.get('coin'),
                     "price": fill.get('px'),
-                    "size": fill.get('sz'),
+                    "qty": fill.get('sz'),
                     "side": fill.get('side'),
                     "timestamp": fill.get('time'),
                     "startPosition": fill.get('startPosition'),
@@ -362,9 +371,10 @@ class HyperLiquid(WebsocketClient, Adapter):
                     "tradeID": fill.get('tid'),
                     "feeToken": fill.get('feeToken')
                 }
+                topic = 'fills'
                 parsed_events.append(parsed_event)
 
-        if 'liquidation' in data:
+        elif 'liquidation' in data:
             liquidation = data.get('liquidation')
             parsed_event = {
                 "liquidationID": liquidation.get('lid'),
@@ -373,17 +383,19 @@ class HyperLiquid(WebsocketClient, Adapter):
                 "netLossPosition": liquidation.get('liquidated_ntl_pos'),
                 "accountValue": liquidation.get('liquidated_account_value')
             }
+            topic = 'liquidation'
             parsed_events.append(parsed_event)
 
-        if 'nonUserCancel' in data:
+        elif 'nonUserCancel' in data:
             for cancel in data['nonUserCancel']:
                 parsed_event = {
                     "coin": cancel.get('coin'),
                     "orderID": cancel.get('oid')
                 }
+                topic = 'orders'
                 parsed_events.append(parsed_event)
 
-        if 'funding' in data:
+        elif 'funding' in data:
             funding = data.get('funding')
             parsed_event = {
                 "timestamp": funding.get('time'),
@@ -393,9 +405,12 @@ class HyperLiquid(WebsocketClient, Adapter):
                 "fundingRate": funding.get('fundingRate'),
                 "nSamples": funding.get('nSamples')
             }
+            topic = 'account'
             parsed_events.append(parsed_event)
 
-        print(f"User Events: {parsed_events}")
+        if self.msg_callback:
+            self.msg_callback(topic, parsed_event)
+        # print(f"User Events: {parsed_events}")
 
     def _process_orders(self, data):
         order_updates = data.get('data', [])
@@ -403,19 +418,22 @@ class HyperLiquid(WebsocketClient, Adapter):
         for order_data in order_updates:  # Iterating through the list of order updates
             order = order_data.get('order', {})
             parsed_order = {
-                "coin": order.get('coin'),
+                "symbol": order.get('coin'),
                 "side": order.get('side') == 'B' and "buy" or "sell",
-                "limitPrice": order.get('limitPx'),
-                "size": order.get('sz'),
-                "orderID": order.get('oid'),
+                "price": order.get('limitPx'),
+                "qty": order.get('sz'),
+                "order_id": order.get('oid'),
                 "timestamp": order.get('timestamp'),
-                "originalSize": order.get('origSz'),
+                "originalQty": order.get('origSz'),
                 "reduceOnly": order.get('reduceOnly', False),
                 "status": order_data.get('status'),
                 "statusTimestamp": order_data.get('statusTimestamp')
             }
             parsed_orders.append(parsed_order)
-        print(f"Order Events: {parsed_orders}")
+
+        if self.msg_callback:
+            self.msg_callback("orders", parsed_orders)
+        # print(f"Order Events: {parsed_orders}")
 
     def _process_order_book(self, data):
         book = data.get("data", {}).get("levels", [])
@@ -433,21 +451,26 @@ class HyperLiquid(WebsocketClient, Adapter):
                 "error": "Invalid book structure",
             }
 
-        print(f"Order Book: {parsed_book}")
+        if self.msg_callback:
+            self.msg_callback("order_book", parsed_book)
+        # print(f"Order Book: {parsed_book}")
 
     def _process_trade(self, data: List[Dict]) -> List[Dict]:
         trades = []
         for trade in data.get("data"):
             trades.append({
-                "coin": trade["coin"],
+                "symbol": trade["coin"],
                 "side": trade["side"],
                 "price": float(trade["px"]),
-                "size": float(trade["sz"]),
-                "time": trade["time"],
+                "qty": float(trade["sz"]),
+                "timestamp": trade["time"],
                 "hash": trade["hash"],
                 "trade_id": trade["tid"]
             })
-        print(f"Trades: {trades}")
+
+        if self.msg_callback:
+            self.msg_callback("trades", trades)
+        # print(f"Trades: {trades}")
 
     def _process_candle(self, message):
         # Directly access 'data' as it already represents a single candle.
@@ -466,4 +489,6 @@ class HyperLiquid(WebsocketClient, Adapter):
             'num_trades': candle_data.get('n')
         }
 
-        print(f"Candle: {parsed_candle}")
+        if self.msg_callback:
+            self.msg_callback("kline", parsed_candle)
+        # print(f"Candle: {parsed_candle}")

@@ -4,7 +4,7 @@ import zmq.asyncio
 import json
 import logging
 import subprocess
-from data_pb2 import PriceData, VolumeData, OrderBookData
+from src.zeromq.data_pb2 import PriceData, VolumeData, OrderBookData
 
 class ZeroMQ:
     def __init__(self, first_run=False):
@@ -96,23 +96,22 @@ class SubscriberSocket:
     async def listen(self):
         while True:
             try:
-                message = await self.receive_message()
+                topic, message = await self.receive_message()
                 if message:
-                    print(f"message123123: {message}")
-                else:
-                    print("No message received, continuing...")
+                    # Parse JSON data here assuming the message contains the data.
+                    data = json.loads(message)
+                    return topic, data
             except Exception as e:
                 logging.error(f"Error listening: {e}")
 
     async def receive_message(self):
-        events = await self.poller.poll(1000)  # Wait for a message with a timeout (e.g., 1000 milliseconds)
+        events = await self.poller.poll(100)  # Non-blocking poll
         if events:
-            # Since we have an event, it's safe to receive without awaiting
-            message = self.socket.recv_string(zmq.NOBLOCK)
-            return message
+            topic = self.socket.recv_string(zmq.NOBLOCK)
+            message = self.socket.recv_string(zmq.NOBLOCK)  # Assume the next frame is the message
+            return topic, message
         else:
-            # No message received within the timeout period
-            return None
+            return None, None
 
     def close(self):
         self.socket.close()
