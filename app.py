@@ -52,6 +52,7 @@ async def monitor(env):
         print(f"orders: {env.active_orders}")
         print(f"executions: {env.executions}")
         print(f"cash: {env.cash}")
+        print(f"klines: {env.klines['ETH']}")
         await asyncio.sleep(5)
 
 logging = setup_logger(level='INFO', stream=True)
@@ -80,29 +81,30 @@ async def main():
 
     # await adapter.subscribe_trades(contract=eth)
     # await adapter.subscribe_order_book(contract=eth)
-    # await adapter.subscribe_klines(eth, "1m")
+    await adapter.subscribe_klines(eth, "1m")
 
-    order_result = await adapter.place_order(order_details=order)
+    # order_result = await adapter.place_order(order_details=order)
     # await adapter.place_order(order_details=order)
 
-    cancel = None
-    order_status = None
+    # cancel = None
+    # order_status = None
 
-    await asyncio.sleep(15)
-    if order_result["status"] == "ok":
-        status = order_result["response"]["data"]["statuses"][0]
-        if "resting" in status:
-            order_status = status["resting"]["oid"]
+    # await asyncio.sleep(15)
+    # if order_result["status"] == "ok":
+    #     status = order_result["response"]["data"]["statuses"][0]
+    #     if "resting" in status:
+    #         order_status = status["resting"]["oid"]
 
-            cancel = {
-                "symbol": "ETH",
-                "order_id": order_status
-            }
+    #         cancel = {
+    #             "symbol": "ETH",
+    #             "order_id": order_status
+    #         }
 
     # if cancel:
     #     await adapter.cancel_order(order_details=cancel)
 
-    await adapter.place_order(order_details=order2)
+    # await adapter.place_order(order_details=order2)
+
     await asyncio.sleep(35)
 
     await adapter.cancel_all_orders()

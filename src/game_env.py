@@ -18,7 +18,7 @@ SEQUENCE_LENGTH = 100
 
 class GameEnv:
     def __init__(self, recv_socket: ZeroMQ, send_socket: ZeroMQ, contracts: List = None, 
-                 max_depth = 10, max_drawdown = 0) -> None:
+                 max_depth = 500, max_drawdown = 0) -> None:
         self.logger = logging.getLogger(__name__)
 
         self.recv = recv_socket
@@ -44,7 +44,7 @@ class GameEnv:
         self.contracts = [{'symbol': contract} for contract in (contracts or [])]
         
         self.order_books = {
-            contract['symbol']: RingBuffer(capacity=SEQUENCE_LENGTH, dtype=(float, self._order_book_dim))
+            contract['symbol']: RingBuffer(capacity=SEQUENCE_LENGTH, dtype=(float, (2 * max_depth, 2)))
             for contract in self.contracts
         }
         self.trades = {
@@ -71,18 +71,15 @@ class GameEnv:
             self.logger.error(f"Unknown data type: {topic}")
             return
 
-        # Update the game environment based on the topic
         if topic == 'order_book':
-            symbol = data['symbol']
-            self.order_books[symbol].append(data)
+            self._process_order_book(data)
         elif topic == 'trades':
             for trade in data:
                 symbol = trade['symbol']
                 formatted_trade = self._process_trade(trade)
                 self.trades[symbol].append(formatted_trade)
         elif topic == 'kline':
-            symbol = data['symbol']
-            self.klines[symbol].append(data)
+            self._process_kline(data)
         elif topic == 'account':
             self._process_account(data)
         elif topic == 'orders':
@@ -103,7 +100,9 @@ class GameEnv:
         # self.update_game_state()
 
     def _process_account(self, data):
-        self.cash = float(data.get('cash_balance', 0))
+        cash = float(data.get('cash_balance', None))
+        if cash:
+            self.cash = cash
 
         # Check if there are positions in the account data before updating the inventory
         if 'positions' in data and data['positions']:
@@ -196,10 +195,42 @@ class GameEnv:
         side = 1 if trade['side'] == 'B' else -1
         return (float(trade['price']), side, float(trade['qty']), float(trade['timestamp']))
 
+    def _process_order_book(self, order_book_data: dict):
+        symbol = order_book_data['symbol']
+        bids = order_book_data.get('bids', [])
+        asks = order_book_data.get('asks', [])
+
+        bids_array = np.array([[float(bid['price']), float(bid['qty'])] for bid in sorted(bids, reverse=True, key=lambda x: -float(x['price']))[:self.max_depth]], dtype=float)
+        asks_array = np.array([[float(ask['price']), float(ask['qty'])] for ask in sorted(asks, key=lambda x: float(x['price']))[:self.max_depth]], dtype=float)
+
+        order_book_snapshot = np.vstack((bids_array, asks_array))
+        self.order_books[symbol].append(order_book_snapshot)
+
+    def _process_kline(self, kline):
+        symbol = kline['symbol']
+        
+        kline_array = np.array([
+            float(kline['open_timestamp']),
+            float(kline['open']),
+            float(kline['high']),
+            float(kline['low']),
+            float(kline['close']),
+            float(kline['volume']),
+        ], dtype=float)
+
+        unwrapped_data = self.klines[symbol]._unwrap()
+
+        if len(unwrapped_data) > 0 and unwrapped_data[-1][0] != kline_array[0]:
+            self.klines[symbol].append(kline_array)
+        else:
+            if len(self.klines[symbol]) > 0:
+                self.klines[symbol].pop()
+            self.klines[symbol].append(kline_array)
+
     @property
     def _order_book_dim(self) -> int:
         # 2 * bid price, bid qty, ask price, ask qty + 1 spread + 1 imbalance
-        return self.max_depth * 2 * 2 + 1 + 1
+        return self.max_depth * 2 * 2 # + 1 + 1
 
     @property
     def _trades_dim(self) -> int:

@@ -2,6 +2,7 @@ import json
 import random
 import time
 import asyncio
+import numpy as np
 
 import eth_account
 from eth_account.signers.local import LocalAccount
@@ -497,16 +498,20 @@ class HyperLiquid(WebsocketClient, Adapter):
             self.msg_callback("orders", parsed_orders)
         # print(f"Order Events: {parsed_orders}")
 
-    def _process_order_book(self, data):
+    def _process_order_book(self, data, num_levels=None):
         book = data.get("data", {}).get("levels", [])
         if len(book) == 2:
-            bids = book[0]
-            asks = book[1]
+            bids, asks = book
+            
+            # Limit the number of levels if num_levels is specified; otherwise, use all levels
+            bids = bids[:num_levels] if num_levels is not None else bids
+            asks = asks[:num_levels] if num_levels is not None else asks
 
             parsed_book = {
+                "symbol": data.get("data", {}).get("coin"),
                 "timestamp": data.get("data", {}).get("time"),
-                "bids": [{"price": level.get("px"), "qty": level.get("sz")} for level in bids], # "n": level.get("n")
-                "asks": [{"price": level.get("px"), "qty": level.get("sz")} for level in asks] # "n": level.get("n")
+                "bids": [{"price": level.get("px"), "qty": level.get("sz")} for level in bids],
+                "asks": [{"price": level.get("px"), "qty": level.get("sz")} for level in asks]
             }
         else:
             parsed_book = {
