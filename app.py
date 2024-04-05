@@ -13,7 +13,7 @@ async def main(profiling=False):
     
     contracts= ["BTC", "ETH", "SOL"]
 
-    data_feed = Feed(contracts=contracts)
+    data_feed = Feed(contracts=contracts, max_depth=10)
     strategy = asyncio.create_task(GAIA(feed=data_feed).run())
     await strategy
 

@@ -17,27 +17,21 @@ class Streams:
 
         self.topics = {
             'order_book': Order_Book(self.feed).update_book,
-            'trades': self._process_trades,
-            'klines': self._process_kline,
+            # 'trades': self._process_trades,
+            # 'klines': self._process_kline,
             'inventory': Inventory(self.feed).update_inventory,
-            'orders': self._process_orders
+            # 'orders': self._process_orders
         }
 
-    def start(self) -> None:
-        self._msg_loop = asyncio.create_task(self._start_msg_loop())
-
-    async def _start_msg_loop(self) -> None:
-        while True:
-            topic, message = await self.recv.listen()
-            if message:
-                self._handle_message(topic, message)
+    async def start(self) -> None:
+        await self.recv.listen(self._handle_message)
 
     def _handle_message(self, topic: str, data: dict) -> None:
         try:
-            handler = self.topic_handlers[topic]
+            handler = self.topics[topic]
             handler(data)
-        except:
-            self._logger.error(f"Unknown topic: {topic}")
+        except Exception as e:
+            self._logger.error(f"Error: {e}")
             return
 
 
@@ -63,9 +57,9 @@ class Inventory:
         self.feed = feed
         self.topics = {
             'fills': self._process_fills,
-            'funding': self._process_funding,
-            'leverage': self._process_leverage,
-            'liquidation': self._process_liquidation
+            # 'funding': self._process_funding,
+            # 'leverage': self._process_leverage,
+            # 'liquidation': self._process_liquidation
         }
 
     def update_inventory(self, update: List) -> None:

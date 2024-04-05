@@ -7,33 +7,62 @@ enum KnownSymbols {
   // Add more known symbols here
 }
 
-message PriceData {
-  oneof symbol_type {
-    string symbol = 1;
-    KnownSymbols known_symbol = 4;
-  }
-  double price = 2;
-  int64 timestamp = 3; // Consider if nanosecond precision is needed
+message UserEvent {
+  string type = 1;
+  string symbol = 2;
+  double price = 3;
+  double qty = 4;
+  string side = 5;
+  int64 timestamp = 6;
+  // Add other relevant fields...
 }
 
-message VolumeData {
-  oneof symbol_type {
-    string symbol = 1;
-    KnownSymbols known_symbol = 4;
-  }
-  double volume = 2;
-  int64 timestamp = 3; // Consider if nanosecond precision is needed
+message OrderUpdate {
+  string symbol = 1;
+  string side = 2; // "BUY" or "SELL"
+  double price = 3;
+  double qty = 4;
+  string order_id = 5;
+  int64 timestamp = 6;
+  double originalQty = 7;
+  bool reduceOnly = 8;
+  string status = 9;
+  int64 statusTimestamp = 10;
+  // Add other relevant fields...
+}
+
+message Trade {
+  string symbol = 1;
+  string side = 2;
+  double price = 3;
+  double qty = 4;
+  int64 timestamp = 5;
+  string trade_id = 6;
+  // Add other relevant fields...
+}
+
+message Candle {
+  int64 open_timestamp = 1;
+  int64 close_timestamp = 2;
+  string symbol = 3;
+  string interval = 4;
+  double open = 5;
+  double close = 6;
+  double high = 7;
+  double low = 8;
+  double volume = 9;
+  int32 num_trades = 10;
+  // Add other relevant fields...
 }
 
 message OrderBookEntry {
   double price = 1;
-  double size = 2;
+  double qty = 2;
 }
 
 message OrderBookData {
   string symbol = 1;
-  repeated OrderBookEntry bids = 2; // List of bids
-  repeated OrderBookEntry asks = 3; // List of asks
-  double last_trade_price = 4;      // Last traded price
-  int64 timestamp = 5;              // Timestamp for the order book snapshot
+  repeated OrderBookEntry bids = 2;
+  repeated OrderBookEntry asks = 3;
+  int64 timestamp = 5;
 }

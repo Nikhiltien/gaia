@@ -14,21 +14,25 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15src/zeromq/data.proto\"u\n\tPriceData\x12\x10\n\x06symbol\x18\x01 \x01(\tH\x00\x12%\n\x0cknown_symbol\x18\x04 \x01(\x0e\x32\r.KnownSymbolsH\x00\x12\r\n\x05price\x18\x02 \x01(\x01\x12\x11\n\ttimestamp\x18\x03 \x01(\x03\x42\r\n\x0bsymbol_type\"w\n\nVolumeData\x12\x10\n\x06symbol\x18\x01 \x01(\tH\x00\x12%\n\x0cknown_symbol\x18\x04 \x01(\x0e\x32\r.KnownSymbolsH\x00\x12\x0e\n\x06volume\x18\x02 \x01(\x01\x12\x11\n\ttimestamp\x18\x03 \x01(\x03\x42\r\n\x0bsymbol_type\"-\n\x0eOrderBookEntry\x12\r\n\x05price\x18\x01 \x01(\x01\x12\x0c\n\x04size\x18\x02 \x01(\x01\"\x8a\x01\n\rOrderBookData\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x1d\n\x04\x62ids\x18\x02 \x03(\x0b\x32\x0f.OrderBookEntry\x12\x1d\n\x04\x61sks\x18\x03 \x03(\x0b\x32\x0f.OrderBookEntry\x12\x18\n\x10last_trade_price\x18\x04 \x01(\x01\x12\x11\n\ttimestamp\x18\x05 \x01(\x03*7\n\x0cKnownSymbols\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x0c\n\x08SYMBOL_A\x10\x01\x12\x0c\n\x08SYMBOL_B\x10\x02\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15src/zeromq/data.proto\"f\n\tUserEvent\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\r\n\x05price\x18\x03 \x01(\x01\x12\x0b\n\x03qty\x18\x04 \x01(\x01\x12\x0c\n\x04side\x18\x05 \x01(\t\x12\x11\n\ttimestamp\x18\x06 \x01(\x03\"\xbe\x01\n\x0bOrderUpdate\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0c\n\x04side\x18\x02 \x01(\t\x12\r\n\x05price\x18\x03 \x01(\x01\x12\x0b\n\x03qty\x18\x04 \x01(\x01\x12\x10\n\x08order_id\x18\x05 \x01(\t\x12\x11\n\ttimestamp\x18\x06 \x01(\x03\x12\x13\n\x0boriginalQty\x18\x07 \x01(\x01\x12\x12\n\nreduceOnly\x18\x08 \x01(\x08\x12\x0e\n\x06status\x18\t \x01(\t\x12\x17\n\x0fstatusTimestamp\x18\n \x01(\x03\"f\n\x05Trade\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0c\n\x04side\x18\x02 \x01(\t\x12\r\n\x05price\x18\x03 \x01(\x01\x12\x0b\n\x03qty\x18\x04 \x01(\x01\x12\x11\n\ttimestamp\x18\x05 \x01(\x03\x12\x10\n\x08trade_id\x18\x06 \x01(\t\"\xb7\x01\n\x06\x43\x61ndle\x12\x16\n\x0eopen_timestamp\x18\x01 \x01(\x03\x12\x17\n\x0f\x63lose_timestamp\x18\x02 \x01(\x03\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x10\n\x08interval\x18\x04 \x01(\t\x12\x0c\n\x04open\x18\x05 \x01(\x01\x12\r\n\x05\x63lose\x18\x06 \x01(\x01\x12\x0c\n\x04high\x18\x07 \x01(\x01\x12\x0b\n\x03low\x18\x08 \x01(\x01\x12\x0e\n\x06volume\x18\t \x01(\x01\x12\x12\n\nnum_trades\x18\n \x01(\x05\",\n\x0eOrderBookEntry\x12\r\n\x05price\x18\x01 \x01(\x01\x12\x0b\n\x03qty\x18\x02 \x01(\x01\"p\n\rOrderBookData\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x1d\n\x04\x62ids\x18\x02 \x03(\x0b\x32\x0f.OrderBookEntry\x12\x1d\n\x04\x61sks\x18\x03 \x03(\x0b\x32\x0f.OrderBookEntry\x12\x11\n\ttimestamp\x18\x05 \x01(\x03*7\n\x0cKnownSymbols\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x0c\n\x08SYMBOL_A\x10\x01\x12\x0c\n\x08SYMBOL_B\x10\x02\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'src.zeromq.data_pb2', _globals)
 if _descriptor._USE_C_DESCRIPTORS == False:
   DESCRIPTOR._options = None
-  _globals['_KNOWNSYMBOLS']._serialized_start=453
-  _globals['_KNOWNSYMBOLS']._serialized_end=508
-  _globals['_PRICEDATA']._serialized_start=25
-  _globals['_PRICEDATA']._serialized_end=142
-  _globals['_VOLUMEDATA']._serialized_start=144
-  _globals['_VOLUMEDATA']._serialized_end=263
-  _globals['_ORDERBOOKENTRY']._serialized_start=265
-  _globals['_ORDERBOOKENTRY']._serialized_end=310
-  _globals['_ORDERBOOKDATA']._serialized_start=313
-  _globals['_ORDERBOOKDATA']._serialized_end=451
+  _globals['_KNOWNSYMBOLS']._serialized_start=772
+  _globals['_KNOWNSYMBOLS']._serialized_end=827
+  _globals['_USEREVENT']._serialized_start=25
+  _globals['_USEREVENT']._serialized_end=127
+  _globals['_ORDERUPDATE']._serialized_start=130
+  _globals['_ORDERUPDATE']._serialized_end=320
+  _globals['_TRADE']._serialized_start=322
+  _globals['_TRADE']._serialized_end=424
+  _globals['_CANDLE']._serialized_start=427
+  _globals['_CANDLE']._serialized_end=610
+  _globals['_ORDERBOOKENTRY']._serialized_start=612
+  _globals['_ORDERBOOKENTRY']._serialized_end=656
+  _globals['_ORDERBOOKDATA']._serialized_start=658
+  _globals['_ORDERBOOKDATA']._serialized_end=770
 # @@protoc_insertion_point(module_scope)

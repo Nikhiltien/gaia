@@ -4,7 +4,10 @@ import zmq.asyncio
 import json
 import logging
 import subprocess
-from src.zeromq.data_pb2 import PriceData, VolumeData, OrderBookData
+import src.zeromq.data_pb2
+
+from typing import Any, Dict
+
 
 class ZeroMQ:
     def __init__(self, first_run=False):
@@ -87,31 +90,28 @@ class PublisherSocket:
         self.socket.close()
 
 class SubscriberSocket:
-    def __init__(self, socket):
+    def __init__(self, socket: zmq.Socket):
         self.socket = socket
         self.poller = zmq.asyncio.Poller()
         self.poller.register(socket, zmq.POLLIN)
         self.socket.setsockopt_string(zmq.SUBSCRIBE, '')
 
-    async def listen(self):
+    async def listen(self, callback: Any) -> None:
         while True:
-            try:
-                topic, message = await self.receive_message()
-                if message:
-                    # Parse JSON data here assuming the message contains the data.
-                    data = json.loads(message)
-                    return topic, data
-            except Exception as e:
-                logging.error(f"Error listening: {e}")
-
-    async def receive_message(self):
-        events = await self.poller.poll(100)  # Non-blocking poll
-        if events:
-            topic = self.socket.recv_string(zmq.NOBLOCK)
-            message = self.socket.recv_string(zmq.NOBLOCK)  # Assume the next frame is the message
-            return topic, message
-        else:
-            return None, None
+            events = await self.poller.poll()  # Await events without blocking
+            if events:
+                try:
+                    parts = self.socket.recv_multipart()
+                    if len(parts) == 2:
+                        topic, message = parts[0].decode(), parts[1].decode()
+                        data = json.loads(message)
+                        callback(topic, data)
+                except zmq.Again:
+                    continue
+                except json.JSONDecodeError:
+                    logging.error("Invalid JSON received.")
+                except Exception as e:
+                    logging.error(f"Error listening: {e}")
 
     def close(self):
         self.socket.close()
