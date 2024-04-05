@@ -6,7 +6,7 @@ import datetime as dt
 from src.feed import Feed
 from src.zeromq.zeromq import ZeroMQ
 from src.utils.ring_buffer import RingBufferF64
-from typing import Dict, List
+from typing import Dict, List, Any
 
 
 class Streams:
@@ -45,14 +45,14 @@ class Order_Book:
     def __init__(self, feed: Feed) -> None:
         self.feed = feed
 
-    def update_book(self, update: Dict[List]) -> None:
+    def update_book(self, update: Dict[str, List[Any]]) -> None:
         symbol = update['symbol']
         _timestamp = update['timestamp']
         bids = update.get('bids', [])
         asks = update.get('asks', [])
 
-        bids_array = np.array([[float(bid['price']), float(bid['qty'])] for bid in sorted(bids, key=lambda x: -float(x['price']), reverse=True)[:self.max_depth]], dtype=float)
-        asks_array = np.array([[float(ask['price']), float(ask['qty'])] for ask in sorted(asks, key=lambda x: float(x['price']))[:self.max_depth]], dtype=float)
+        bids_array = np.array([[float(bid['price']), float(bid['qty'])] for bid in sorted(bids, key=lambda x: -float(x['price']), reverse=True)[:self.feed.max_depth]], dtype=float)
+        asks_array = np.array([[float(ask['price']), float(ask['qty'])] for ask in sorted(asks, key=lambda x: float(x['price']))[:self.feed.max_depth]], dtype=float)
 
         snapshot = np.vstack((bids_array, asks_array))
         self.feed.order_books[symbol].append(snapshot)
@@ -93,7 +93,7 @@ class Inventory:
             logging.error(f"Symbol not in contract list: {symbol}")
             # self.inventory[symbol] = {'qty': 0, 'avg_price': 0, 'leverage': 0}
 
-        inventory_item = self.inventory[symbol]
+        inventory_item = self.feed.inventory[symbol]
         current_qty = inventory_item['qty']
         current_avg_price = inventory_item['avg_price']
         leverage = inventory_item['leverage'] or 0

@@ -6,7 +6,7 @@ import numpy as np
 import gymnasium as gym
 
 from typing import List
-from feed import Feed
+from src.feed import Feed
 from src.zeromq.zeromq import ZeroMQ
 
 

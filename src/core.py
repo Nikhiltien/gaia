@@ -24,9 +24,9 @@ class GAIA:
 
     async def run(self) -> None:
 
-        logging.info(f"{datetime.datetime.now(datetime.timezone.utc)}: Waiting for ready signal...")
+        logging.info(f"Waiting for ready signal...")
         await self._wait_for_confirmation()
-        logging.info(f"{datetime.datetime.now(datetime.timezone.utc)}: Starting strategy...")
+        logging.info(f"Signal received, starting strategy...")
 
         recv_socket = self.zmq.create_subscriber(50000)
         send_socket = self.zmq.create_dealer_socket(identity="GameEnv")
