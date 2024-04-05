@@ -319,7 +319,7 @@ class HyperLiquid(WebsocketClient, Adapter):
     async def update_leverage(self, leverage_details: Dict):
         response = self.exchange.update_leverage(
             leverage=leverage_details.get("leverage"),
-            coin=leverage_details.get("coin"),
+            coin=leverage_details.get("symbol"),
             is_cross=leverage_details.get("is_cross", True)
         )
         return response
@@ -419,6 +419,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         if 'fills' in data:
             for fill in data['fills']:
                 parsed_event = {
+                    "type": "fills",
                     "symbol": fill.get('coin'),
                     "price": fill.get('px'),
                     "qty": fill.get('sz'),
@@ -434,19 +435,20 @@ class HyperLiquid(WebsocketClient, Adapter):
                     "tradeID": fill.get('tid'),
                     "feeToken": fill.get('feeToken')
                 }
-                topic = 'fills'
+                topic = 'inventory'
                 parsed_events.append(parsed_event)
 
         elif 'liquidation' in data:
             liquidation = data.get('liquidation')
             parsed_event = {
+                "type": "liquidation",
                 "liquidationID": liquidation.get('lid'),
                 "liquidator": liquidation.get('liquidator'),
                 "liquidatedUser": liquidation.get('liquidated_user'),
                 "netLossPosition": liquidation.get('liquidated_ntl_pos'),
                 "accountValue": liquidation.get('liquidated_account_value')
             }
-            topic = 'liquidation'
+            topic = 'inventory'
             parsed_events.append(parsed_event)
 
         elif 'nonUserCancel' in data:
@@ -461,6 +463,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         elif 'funding' in data:
             funding = data.get('funding')
             parsed_event = {
+                "type": "funding",
                 "timestamp": funding.get('time'),
                 "symbol": funding.get('coin'),
                 "usdc": funding.get('usdc'),
@@ -468,7 +471,7 @@ class HyperLiquid(WebsocketClient, Adapter):
                 "fundingRate": funding.get('fundingRate'),
                 "nSamples": funding.get('nSamples')
             }
-            topic = 'account'
+            topic = 'inventory'
             parsed_events.append(parsed_event)
 
         if self.msg_callback:
