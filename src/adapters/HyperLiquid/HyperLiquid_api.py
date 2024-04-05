@@ -560,5 +560,5 @@ class HyperLiquid(WebsocketClient, Adapter):
         }
 
         if self.msg_callback:
-            self.msg_callback("kline", parsed_candle)
+            self.msg_callback("klines", parsed_candle)
         # print(f"Candle: {parsed_candle}")

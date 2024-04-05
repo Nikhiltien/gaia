@@ -20,7 +20,7 @@ class Feed:
 
         self.contracts = [{'symbol': contract} for contract in (contracts or [])]
 
-        self.balances = RingBuffer(capacity=SEQUENCE_LENGTH) # , data_type=(float, 2))
+        self.balances = RingBuffer(capacity=SEQUENCE_LENGTH, dtype=(float, 2))
         self.inventory = {contract['symbol']: {'qty': 0, 'avg_price': 0, 'leverage': 0, 'delta': 0} 
                           for contract in self.contracts}
 
@@ -40,3 +40,17 @@ class Feed:
             for contract in self.contracts
         }
 
+    @property
+    def _order_book_dim(self) -> int:
+        # 2 * bid price, bid qty, ask price, ask qty + 1 spread + 1 imbalance
+        return self.max_depth * 2 * 2 # + 1 + 1
+
+    @property
+    def _trades_dim(self) -> int:
+        # price, side, qty, timestamp
+        return 1 + 1 + 1 + 1
+
+    @property
+    def _klines_dim(self) -> int:
+        # OHLC, volume, additional features, timestamp
+        return 4 + 1 + 0 + 1

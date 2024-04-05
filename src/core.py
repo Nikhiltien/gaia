@@ -43,7 +43,7 @@ class GAIA:
 
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
-        await adapter.subscribe_order_book({'symbol': 'BTC'})
+        await adapter.subscribe_klines({'symbol': 'BTC'}, "1m")
 
         logging.info(f"Waiting for ready signal...")
         await self._wait_for_confirmation()

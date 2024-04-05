@@ -10,6 +10,7 @@ from src.logger import setup_logger
 
 async def main(profiling=False):
     logging = setup_logger(level='INFO', stream=True)
+    logging.info("Starting Gaia...")
     
     contracts= ["BTC", "ETH", "SOL"]
 
@@ -24,6 +25,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     profiler = cProfile.Profile() if args.profile else None
 
@@ -32,13 +35,17 @@ if __name__ == "__main__":
             profiler.enable()
             print("WARNING - Running Gaia with profiler!")
 
-        asyncio.run(main(profiling=args.profile))
+        loop.run_until_complete(main(profiling=args.profile))
 
     except KeyboardInterrupt:
         print("\nShutting down...")
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.stop()
 
     finally:
-        # Ensure profiler stats are printed if profiling was enabled
         if profiler:
             profiler.disable()
             profiler.print_stats()
+        loop.close()

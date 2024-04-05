@@ -5,7 +5,6 @@ import datetime as dt
 
 from src.feed import Feed
 from src.zeromq.zeromq import ZeroMQ
-from src.utils.ring_buffer import RingBufferF64
 from typing import Dict, List, Any
 
 
@@ -17,10 +16,10 @@ class Streams:
 
         self.topics = {
             'order_book': Order_Book(self.feed).update_book,
-            # 'trades': self._process_trades,
-            # 'klines': self._process_kline,
+            'trades': Trades(self.feed).update_trades,
+            'klines': Klines(self.feed).update_klines,
             'inventory': Inventory(self.feed).update_inventory,
-            # 'orders': self._process_orders
+            'orders': Orders(self.feed).update_orders,
         }
 
     async def start(self) -> None:
@@ -109,13 +108,44 @@ class Orders:
     def __init__(self, feed: Feed) -> None:
         self.feed = feed
 
+    def update_orders(self, update) -> None:
+        pass
+
 
 class Trades:
-    def __init__(self) -> None:
-        pass
+    def __init__(self, feed: Feed) -> None:
+        self.feed = feed
+
+    def update_trades(self, update: List):
+        for trade in update:
+            symbol = trade['symbol']
+            side = 1 if trade['side'] == 'B' else -1
+            update = (float(trade['price']), side, float(trade['qty']), float(trade['timestamp']))
+            self.feed.trades[symbol].append(update)
 
 
 class Klines:
-    def __init__(self) -> None:
-        pass
+    def __init__(self, feed: Feed) -> None:
+        self.feed = feed
+
+    def update_klines(self, update: Dict):
+        symbol = update['symbol']
+        
+        kline_array = np.array([
+            float(update['open_timestamp']),
+            float(update['open']),
+            float(update['high']),
+            float(update['low']),
+            float(update['close']),
+            float(update['volume']),
+        ], dtype=float)
+
+        unwrapped_data = self.feed.klines[symbol]._unwrap()
+
+        if len(unwrapped_data) > 0 and unwrapped_data[-1][0] != kline_array[0]:
+            self.feed.klines[symbol].append(kline_array)
+        else:
+            if len(self.feed.klines[symbol]) > 0:
+                self.feed.klines[symbol].pop()
+            self.feed.klines[symbol].append(kline_array)
 
