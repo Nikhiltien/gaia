@@ -124,7 +124,7 @@ class Inventory:
         inventory_item = self.feed.inventory[symbol]
         current_qty = inventory_item['qty']
         current_avg_price = inventory_item['avg_price']
-        leverage = inventory_item['leverage'] or 1
+        leverage = inventory_item['leverage']
 
         if side == 'B':  # Adjust for buy
             updated_qty = current_qty + qty

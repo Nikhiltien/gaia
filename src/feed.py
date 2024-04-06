@@ -7,7 +7,7 @@ from collections import deque
 from numpy_ringbuffer import RingBuffer
 
 
-SEQUENCE_LENGTH = 100
+SEQUENCE_LENGTH = 15
 
 
 class Feed:
@@ -21,7 +21,7 @@ class Feed:
         self.contracts = [{'symbol': contract} for contract in (contracts or [])]
 
         self.balances = RingBuffer(capacity=SEQUENCE_LENGTH, dtype=(float, 2))
-        self.inventory = {contract['symbol']: {'qty': 0, 'avg_price': 0, 'leverage': 1, 'delta': 0} 
+        self.inventory = {contract['symbol']: {'qty': 0, 'avg_price': 0, 'leverage': 1} # , 'delta': 0} 
                           for contract in self.contracts}
 
         self.active_orders = {}
