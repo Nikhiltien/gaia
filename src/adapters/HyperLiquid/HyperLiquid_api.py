@@ -193,6 +193,7 @@ class HyperLiquid(WebsocketClient, Adapter):
     @staticmethod
     def _parse_user_state(response: dict) -> dict:
         parsed_data = {
+            "type": "sync",
             "positions": [],
             "cash_balance": response["crossMarginSummary"]["accountValue"]
         }
@@ -225,6 +226,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         open_orders = []
         for order in response:
             open_orders.append({
+                "type": "sync",
                 "symbol": order["coin"],
                 "side": "BUY" if order["side"] == "B" else "SELL",
                 "price": order["limitPx"],
@@ -337,13 +339,12 @@ class HyperLiquid(WebsocketClient, Adapter):
         await self.subscribe_orders()
 
         while True:
-            data = []
             user_state = await self.get_user_state()
             open_orders = await self.get_open_orders()
-            data.append(user_state)
-            data.append(open_orders)
             if self.msg_callback:
-                self.msg_callback("sync", data)
+                self.msg_callback("sync", user_state)
+                if open_orders:
+                    self.msg_callback("sync", open_orders)
             await asyncio.sleep(interval)
 
     async def subscribe_notifications(self, user_address=None, req_id=None):

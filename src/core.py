@@ -11,6 +11,7 @@ from src.feed import Feed
 from src.py_streams import Streams
 from src.game_env import GameEnv
 from src.zeromq.zeromq import ZeroMQ
+from src.console import Console
 from typing import Dict
 
 from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
@@ -66,7 +67,7 @@ class GAIA:
         pub_socket, _ = self.zmq.create_publisher(name="HyperLiquid_publisher")
 
         # api_manager = APIManager()
-        # adapter = api_manager.load('HYPERLIQUID')
+        # adapter = await api_manager.load('HYPERLIQUID')
 
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
@@ -94,8 +95,9 @@ class GAIA:
         tasks = [
             asyncio.create_task(Streams(self.feed, recv_socket).start()),
             asyncio.create_task(GameEnv(self.feed, send_socket).start()),
-            # asyncio.create_task(api_manager.start()),
+            # asyncio.create_task(APIManager().start()),
             # asyncio.create_task(OMS(adapter=adapter).start()),
+            # asyncio.create_task(Console().start()),
             ]
         
         await asyncio.gather(*tasks)
@@ -110,7 +112,7 @@ class GAIA:
         while True:
             await asyncio.sleep(1)
 
-            if not self.feed.ready:
-                continue
+            # if not self.feed.ready:
+            #     continue
             
             break

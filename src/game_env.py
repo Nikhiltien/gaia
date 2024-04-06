@@ -5,9 +5,9 @@ import datetime
 import numpy as np
 import gymnasium as gym
 
-from typing import List
+from typing import List, Tuple
 from src.feed import Feed
-from src.zeromq.zeromq import ZeroMQ
+from src.zeromq.zeromq import DealerSocket
 
 
 MAX_STEPS = 25
@@ -16,7 +16,7 @@ SEQUENCE_LENGTH = 100
 
 
 class GameEnv(gym.Env):
-    def __init__(self, feed: Feed, send_socket: ZeroMQ,
+    def __init__(self, feed: Feed, send_socket: DealerSocket,
                  max_depth=100, max_drawdown=0, margin=True) -> None:
         self.logger = logging.getLogger(__name__)
 
@@ -35,15 +35,11 @@ class GameEnv(gym.Env):
 
     async def start(self):
         while True:
-            # print(f"Status: {self.feed.inventory}, {self.feed.active_orders}")
-            print(f"Inventory: {self.get_inventory_value()}")
+            balances = self.feed.balances._unwrap()
+            print(f"Status \nCash: {balances[-1][1] if balances.size > 0 else 0} \nInventory: {self.get_inventory_value()}")
             await asyncio.sleep(15)
         
-    def get_inventory_value(self):
-        """
-        Calculate the total value of the inventory and individual position values.
-        Uses the latest trade price as the market price for each contract.
-        """
+    def get_inventory_value(self) -> Tuple[float, float]:
         total_value = 0.0
         individual_values = {}
 
@@ -52,7 +48,7 @@ class GameEnv(gym.Env):
             if prices.size > 0:
                 last_price = prices[-1][4]
                 # Calculate the value of the individual position
-                position_value = inventory_item['qty'] * last_price
+                position_value = inventory_item['qty'] * last_price * inventory_item['leverage']
                 individual_values[symbol] = position_value
 
                 # Add to the total inventory value
@@ -80,24 +76,6 @@ class GameEnv(gym.Env):
             }
 
         self.logger.info(f"Leverage updated for {symbol}: {leverage}")
-
-    def _process_account(self, data):
-        cash = float(data.get('cash_balance', None))
-        if cash:
-            self.cash = cash
-
-        if 'positions' in data and data['positions']:
-            new_inventory = {}
-
-            for position in data['positions']:
-                symbol = position['symbol']
-                qty = float(position['qty'])
-                leverage = float(position['leverage'])
-                avg_price = float(position['avg_price'])
-                if qty != 0:
-                    new_inventory[symbol] = {'qty': qty, 'avg_price': avg_price, 'leverage': leverage}
-            self.inventory = new_inventory
-
 
     def step(self):
         pass

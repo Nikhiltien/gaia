@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import numpy as np
+import datetime as dt
 
 from src.feed import Feed
 from src.zeromq.zeromq import ZeroMQ
@@ -13,12 +14,16 @@ class Streams:
         self.feed = feed
         self.recv = recv_socket
 
+        self.queue = asyncio.Queue()
+        self.lock = asyncio.Lock()
+
         self.topics = {
             'order_book': Order_Book(self.feed).update_book,
             'trades': Trades(self.feed).update_trades,
             'klines': Klines(self.feed).update_klines,
             'inventory': Inventory(self.feed).update_inventory,
             'orders': Orders(self.feed).update_orders,
+            'sync': Inventory(self.feed).update_inventory
         }
 
     async def start(self) -> None:
@@ -29,7 +34,7 @@ class Streams:
             handler = self.topics[topic]
             handler(data)
         except Exception as e:
-            self._logger.error(f"Error: {e}")
+            self._logger.error(f"Error processing update: {e}")
             return
 
 
@@ -57,10 +62,11 @@ class Inventory:
             'fills': self._process_fills,
             'funding': self._process_funding,
             'leverage': self._process_leverage,
-            'liquidation': self._process_liquidations
+            'liquidation': self._process_liquidations,
+            'sync': self._process_sync
         }
 
-    def update_inventory(self, update: List) -> None:
+    def update_inventory(self, update: Any) -> None:
         update_type = update['type']
         if update_type in self.topics:
             handler = self.topics[update_type]
@@ -68,13 +74,43 @@ class Inventory:
         else:
             logging.error('Data type not supported')
 
+    def _process_sync(self, sync: Dict) -> None:
+        if not self.feed.ready:
+            cash_balance = sync.get('cash_balance')
+            if cash_balance:
+                try:
+                    cash = float(cash_balance)
+                    now = dt.datetime.now(dt.timezone.utc)
+                    self.feed.balances.append(np.array([now.timestamp(), cash]))
+                except ValueError:
+                    logging.error(f"Invalid cash balance format: {cash_balance}")
+            
+            positions = sync.get('positions')
+            if positions and isinstance(positions, list):
+                new_inventory = {}
+                for position in positions:
+                    try:
+                        symbol = position.get('symbol')
+                        qty = float(position.get('qty', 0))
+                        leverage = float(position.get('leverage', 1))
+                        avg_price = float(position.get('avg_price', 0))
+                        if qty != 0:
+                            new_inventory[symbol] = {'qty': qty, 'avg_price': avg_price, 'leverage': leverage}
+                    except ValueError:
+                        logging.error(f"Invalid format in position data: {position}")
+                self.feed.inventory = new_inventory
+
+            self.feed.ready = True
+            logging.info('Inventory is synced.')
+
     def _process_fills(self, fill: List):
         self.feed.executions.append(fill)
 
-        # now = dt.datetime.now(dt.timezone.utc)
-        # latest_balance = self.feed.balances[-1][1] if self.feed.balances.size > 0 else 0 # ._unwrap()
-        # fee = float(fill['fee'])
-        # self.feed.balances.append(np.array([now.timestamp(), latest_balance - fee]))
+        now = dt.datetime.now(dt.timezone.utc)
+        balances = self.feed.balances._unwrap()
+        latest_balance = balances[-1][1] if balances.size > 0 else 0
+        fee = float(fill['fee'])
+        self.feed.balances.append(np.array([now.timestamp(), latest_balance - fee]))
 
         symbol = fill['symbol']
         qty = float(fill['qty'])
@@ -88,7 +124,7 @@ class Inventory:
         inventory_item = self.feed.inventory[symbol]
         current_qty = inventory_item['qty']
         current_avg_price = inventory_item['avg_price']
-        leverage = inventory_item['leverage'] or 0
+        leverage = inventory_item['leverage'] or 1
 
         if side == 'B':  # Adjust for buy
             updated_qty = current_qty + qty

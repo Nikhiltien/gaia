@@ -14,14 +14,14 @@ class Feed:
     def __init__(self, contracts: List = None, max_depth=100, margin=True) -> None:
         self.logger = logging.getLogger(__name__)
 
-        self.ready = True
+        self.ready = False
         self.max_depth = max_depth
         self.margin = margin
 
         self.contracts = [{'symbol': contract} for contract in (contracts or [])]
 
         self.balances = RingBuffer(capacity=SEQUENCE_LENGTH, dtype=(float, 2))
-        self.inventory = {contract['symbol']: {'qty': 0, 'avg_price': 0, 'leverage': 0, 'delta': 0} 
+        self.inventory = {contract['symbol']: {'qty': 0, 'avg_price': 0, 'leverage': 1, 'delta': 0} 
                           for contract in self.contracts}
 
         self.active_orders = {}
