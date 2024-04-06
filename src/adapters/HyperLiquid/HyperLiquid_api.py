@@ -321,12 +321,21 @@ class HyperLiquid(WebsocketClient, Adapter):
         response = self.exchange.update_leverage(
             leverage=leverage_details.get("leverage"),
             coin=leverage_details.get("symbol"),
-            is_cross=leverage_details.get("is_cross", True)
+            is_cross=leverage_details.get("cross_margin", True)
         )
+
+        # Check the structure and content of the response to determine the status
+        if isinstance(response, dict):
+            if response.get("status") == 'ok' and isinstance(response.get("response"), dict) and response["response"].get("type") == "default":
+                response_status = "ok"
+            else:
+                response_status = "error"
+        else:
+            response_status = "error"
 
         full_response = {
             "type": "leverage",
-            "status": "ok" if response["response"]["type"] == "default" and response["status"] == 'ok' else "error",
+            "status": response_status,
             "symbol": leverage_details.get("symbol"),
             "leverage": leverage_details.get("leverage"),
             "cross_margin": leverage_details.get("cross_margin"),
@@ -334,6 +343,7 @@ class HyperLiquid(WebsocketClient, Adapter):
 
         if self.msg_callback:
             self.msg_callback("inventory", full_response)
+
         return full_response
 
     async def update_isolated_margin(self, margin_details: Dict):
@@ -354,7 +364,7 @@ class HyperLiquid(WebsocketClient, Adapter):
             if self.msg_callback:
                 self.msg_callback("sync", user_state)
                 if open_orders:
-                    self.msg_callback("sync", open_orders)
+                    self.msg_callback("orders", open_orders)
             await asyncio.sleep(interval)
 
     async def subscribe_notifications(self, user_address=None, req_id=None):

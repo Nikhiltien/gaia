@@ -2,7 +2,8 @@ import atexit
 import signal
 import asyncio
 
-from typing import List, Dict, Tuple
+from enum import Enum
+from typing import List, Dict, Tuple, Any
 from src.feed import Feed
 from src.zeromq.zeromq import RouterSocket
 from src.adapters.base_adapter import Adapter
@@ -25,6 +26,10 @@ class OMS():
     def _handle_message(self, topic: str, data: dict) -> None:
         if topic == 'adjust_leverage':
             asyncio.create_task(self.set_leverage(data))
+        elif topic == 'cancel_all':
+            asyncio.create_task(self.cancel_all_orders())
+        elif topic == 'cancel':
+            asyncio.create_task(self.cancel_order(data))
 
     def exit(self):
         pass
@@ -33,16 +38,17 @@ class OMS():
         print(new_orders)
         pass
 
+    async def cancel_order(self, order: Dict[str, int]):
+        await self.exchange.cancel_order(order)
+
     async def cancel_all_orders(self):
         await self.exchange.cancel_all_orders()
 
-    async def set_leverage(self, leverage: Tuple[str, float, bool]) -> None:
+    async def set_leverage(self, leverage: Dict[str, Any]) -> None:
         """
-        args: symbol, leverage, cross margin.
+        Expects 'leverage' argument to be a dictionary with:
+        - 'symbol' as a string,
+        - 'leverage' as a float, and
+        - 'is_cross' as a boolean.
         """
-        update = {
-            'symbol': leverage['symbol'],
-            'leverage': leverage['leverage'],
-            'is_cross': leverage['cross_margin'],
-        }
-        await self.exchange.update_leverage(update)
+        await self.exchange.update_leverage(leverage)

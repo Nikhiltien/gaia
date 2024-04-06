@@ -34,7 +34,7 @@ class Streams:
             handler = self.topics[topic]
             handler(data)
         except Exception as e:
-            self._logger.error(f"Error processing update: {e}")
+            self._logger.error(f"Error processing update: {e}, {data}")
             return
 
 class Inventory:
@@ -149,8 +149,12 @@ class Orders:
     def update_orders(self, update: List) -> None:
         for order in update:
             order_id = order.get('order_id')
+
             if order.get('status') in ['filled', 'canceled']:
                 self.feed.active_orders.pop(order_id, None)
+            elif order.get('status') == 'rejected':
+                logging.warning(f"Order rejected: {update}")
+                return
             else:
                 current_order = self.feed.active_orders.get(order_id)
                 if not current_order or current_order != order:

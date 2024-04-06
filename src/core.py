@@ -69,7 +69,7 @@ async def place_orders(adapter: HyperLiquid):
     order_result = await adapter.place_order(order_details=order3)
     print(order_result)
     await asyncio.sleep(19)
-    # await adapter.update_leverage(leverage_details=leverage)
+    await adapter.update_leverage(leverage_details=leverage)
     resp = await adapter.place_order(order_details=order)
     print(resp)
     await asyncio.sleep(10)

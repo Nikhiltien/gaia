@@ -6,6 +6,7 @@ import gymnasium as gym
 
 from datetime import datetime, timedelta
 from typing import List, Tuple
+from numpy.typing import NDArray
 from src.feed import Feed
 from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
@@ -34,9 +35,12 @@ class GameEnv(gym.Env):
         self.step = 0
 
     async def start(self):
-
+        self.logger.info(f"Setting leverage to default ({self.default_leverage}) for all symbols.")
         for contract in self.feed.contracts:
             self.actions.adjust_leverage(contract['symbol'], self.default_leverage, True)
+
+        self.logger.info("Cancelling any active orders.")
+        self.actions.cancel_all_orders()
 
         while True:
             self.get_status()
@@ -55,11 +59,16 @@ class GameEnv(gym.Env):
             f"Inventory Value: {self.get_inventory_value()[0]:.2f}\n"
             f"Active Orders: {active_orders_count}\n"
             f"1H PnL: {pnl_1h:.2f}\n"
-            f"1H Executions: {executions_1h}\n"
-            f"1H Drawdown: {max_drawdown_1h:.2f}\n"
+            f"1H # of Trades: {executions_1h}\n"
+            # TODO f"1H Drawdown: {max_drawdown_1h:.2f}\n"
+            # TODO "Unrealized PNL"
+            # TODO "Account Leverage"
         )
 
         print(status_message)
+        # for contract in self.feed.contracts:
+        #      print(f"{contract['symbol']}: {self.get_orders_for_symbol(contract['symbol'])}")
+        # print(self.get_orders_for_symbol(symbol for contract['symbol'] in self.feed.contracts))
 
     def calculate_pnl_1h(self):
         now = datetime.now()
@@ -108,6 +117,26 @@ class GameEnv(gym.Env):
         balances = self.feed.balances._unwrap()
         return balances[-1][1] if balances.size > 0 else 0
     
+    def get_orders_for_symbol(self, symbol: str) -> NDArray:
+        # Filter active orders by symbol
+        filtered_orders = [
+            [order["side"] == "BUY" and 1 or -1,
+             order["price"],
+             order["qty"],
+             # order["timestamp"]
+             ] 
+            for order in self.feed.active_orders.values() if order["symbol"] == symbol
+        ]
+        
+        # If there are no orders for the symbol, return an empty array with the correct shape
+        if not filtered_orders:
+            return np.empty((0, 3))
+        
+        # Convert the list to a numpy array
+        order_array = np.array(filtered_orders, dtype=float)
+        
+        return order_array
+
     def get_rnn_data(self):
         balances_array = self.feed.balances._unwrap().flatten()
         
@@ -143,3 +172,15 @@ class GameActions(gym.Env):
         }
 
         self.send.publish_data('adjust_leverage', update)
+
+    def cancel_order(self, symbol: str, order_id: int) -> None:
+        update = {
+            'symbol': symbol,
+            'order_id': order_id
+        }
+
+        self.send.publish_data('cancel', update)
+
+    def cancel_all_orders(self) -> None:
+        update = {'type': 'cancel_all'}
+        self.send.publish_data('cancel_all', update)
