@@ -16,6 +16,33 @@ from typing import Dict
 from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
 
 
+
+order = {
+    "symbol": "ETH",
+    "side": "BUY",
+    "price": 3400.0,
+    "qty": 0.01,
+    "reduceOnly": False,
+    "orderType": {
+        "limit": {
+            "tif": "Gtc"
+        }
+    }
+}
+
+order2 = {
+    "symbol": "ETH",
+    "side": "SELL",
+    "price": 3100.0,
+    "qty": 0.01,
+    "reduceOnly": False,
+    "orderType": {
+        "limit": {
+            "tif": "Gtc"
+        }
+    }
+}
+
 class GAIA:
     def __init__(self, feed: Feed) -> None:
         self.feed = feed
@@ -43,7 +70,22 @@ class GAIA:
 
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
-        await adapter.subscribe_klines({'symbol': 'BTC'}, "1m")
+        await adapter.subscribe_klines({'symbol': 'ETH'}, "1m")
+
+        async def place_orders(adapter):
+            # Your order placing logic
+            # while True:
+            await asyncio.sleep(19)
+            # Assuming 'order' is defined elsewhere or passed as a parameter
+            resp = await adapter.place_order(order_details=order)
+            print(resp)
+            await asyncio.sleep(10)
+            # Assuming 'order2' is defined elsewhere or passed as a parameter
+            resp2 = await adapter.place_order(order_details=order2)
+            print(resp2)
+                # return
+
+        order_task = asyncio.create_task(place_orders(adapter))
 
         logging.info(f"Waiting for ready signal...")
         await self._wait_for_confirmation()

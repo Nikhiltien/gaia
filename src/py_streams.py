@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import numpy as np
-import datetime as dt
 
 from src.feed import Feed
 from src.zeromq.zeromq import ZeroMQ
@@ -56,9 +55,9 @@ class Inventory:
         self.feed = feed
         self.topics = {
             'fills': self._process_fills,
-            # 'funding': self._process_funding,
-            # 'leverage': self._process_leverage,
-            # 'liquidation': self._process_liquidation
+            'funding': self._process_funding,
+            'leverage': self._process_leverage,
+            'liquidation': self._process_liquidations
         }
 
     def update_inventory(self, update: List) -> None:
@@ -72,19 +71,19 @@ class Inventory:
     def _process_fills(self, fill: List):
         self.feed.executions.append(fill)
 
-        now = dt.datetime.now(dt.timezone.utc)
-        latest_balance = self.feed.balances[-1][1] if self.feed.balances.size > 0 else 0 # ._unwrap()
-        fee = float(fill['fee'])
-        self.feed.balances.append(np.array([now.timestamp(), latest_balance - fee]))
+        # now = dt.datetime.now(dt.timezone.utc)
+        # latest_balance = self.feed.balances[-1][1] if self.feed.balances.size > 0 else 0 # ._unwrap()
+        # fee = float(fill['fee'])
+        # self.feed.balances.append(np.array([now.timestamp(), latest_balance - fee]))
 
         symbol = fill['symbol']
         qty = float(fill['qty'])
         price = float(fill['price'])
         side = fill['side']
 
-        if symbol not in self.inventory:
+        if symbol not in self.feed.inventory:
             logging.error(f"Symbol not in contract list: {symbol}")
-            # self.inventory[symbol] = {'qty': 0, 'avg_price': 0, 'leverage': 0}
+            # self.feed.inventory[symbol] = {'qty': 0, 'avg_price': 0, 'leverage': 0}
 
         inventory_item = self.feed.inventory[symbol]
         current_qty = inventory_item['qty']
@@ -101,15 +100,30 @@ class Inventory:
             updated_qty = current_qty - qty
             updated_avg_price = current_avg_price  # Average price remains unchanged for sell
 
-        self.inventory[symbol] = {'qty': updated_qty, 'avg_price': updated_avg_price, 'leverage': leverage}
+        self.feed.inventory[symbol] = {'qty': updated_qty, 'avg_price': updated_avg_price, 'leverage': leverage}
 
+    def _process_liquidations(self, liquidations: List) -> None:
+        pass
+
+    def _process_leverage(self, leverage: List) -> None:
+        pass
+
+    def _process_funding(self, funding: List) -> None:
+        pass
 
 class Orders:
     def __init__(self, feed: Feed) -> None:
         self.feed = feed
 
-    def update_orders(self, update) -> None:
-        pass
+    def update_orders(self, update: List) -> None:
+        for order in update:
+            order_id = order.get('order_id')
+            if order.get('status') in ['filled', 'canceled']:
+                self.feed.active_orders.pop(order_id, None)
+            else:
+                current_order = self.feed.active_orders.get(order_id)
+                if not current_order or current_order != order:
+                    self.feed.active_orders[order_id] = order
 
 
 class Trades:
