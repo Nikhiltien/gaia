@@ -75,7 +75,7 @@ class Inventory:
             logging.error('Data type not supported')
 
     def _process_sync(self, sync: Dict) -> None:
-        if not self.feed.ready:
+        if not self.feed.ready: # TODO
             cash_balance = sync.get('cash_balance')
             if cash_balance:
                 try:
@@ -100,7 +100,7 @@ class Inventory:
                         logging.error(f"Invalid format in position data: {position}")
                 self.feed.inventory = new_inventory
 
-            self.feed.ready = True
+            # self.feed.ready = True
             logging.info('Inventory is synced.')
 
     def _process_fills(self, fill: List):
@@ -110,7 +110,8 @@ class Inventory:
         balances = self.feed.balances._unwrap()
         latest_balance = balances[-1][1] if balances.size > 0 else 0
         fee = float(fill['fee'])
-        self.feed.balances.append(np.array([now.timestamp(), latest_balance - fee]))
+        pnl = float(fill['closedPnL'])
+        self.feed.balances.append(np.array([now.timestamp(), latest_balance - fee + pnl]))
 
         symbol = fill['symbol']
         qty = float(fill['qty'])
@@ -141,8 +142,18 @@ class Inventory:
     def _process_liquidations(self, liquidations: List) -> None:
         pass
 
-    def _process_leverage(self, leverage: List) -> None:
-        pass
+    def _process_leverage(self, leverage: Dict) -> None:
+        symbol = leverage['symbol']
+        if symbol in self.feed.inventory:
+            self.feed.inventory[symbol]['leverage'] = leverage
+        else:
+            self.feed.inventory[symbol] = {
+                'qty': 0,
+                'avg_price': 0,
+                'leverage': leverage
+            }
+
+        self.logger.info(f"Leverage updated for {symbol}: {leverage}")
 
     def _process_funding(self, funding: List) -> None:
         pass

@@ -7,11 +7,12 @@ from src.feed import Feed
 from src.zeromq.zeromq import RouterSocket
 from src.adapters.base_adapter import Adapter
 
+
 class OMS():
-    def __init__(self, router: RouterSocket, adapter: Adapter, feed: Feed) -> None:
-        self.router = router
+    def __init__(self, feed: Feed, adapter: Adapter, router: RouterSocket) -> None:
         self.exchange = adapter
         self.feed = feed
+        self.router = router
 
         atexit.register(self.exit)
         signal.signal(signal.SIGTERM, self.exit)
@@ -22,9 +23,20 @@ class OMS():
     def exit(self):
         pass
 
-    def place_orders(self, new_orders: List[Tuple[str, float, float]]) -> Dict:
+    async def place_orders(self, new_orders: List[Tuple[str, float, float]]):
         print(new_orders)
         pass
 
-    def cancel_all_orders(self):
+    async def cancel_all_orders(self):
         pass
+
+    async def set_leverage(self, leverage: Tuple[str, float, bool]) -> None:
+        """
+        args: symbol, leverage, cross margin.
+        """
+        update = {
+            'symbol': leverage[0],
+            'leverage': leverage[1],
+            'is_cross': leverage[2],
+        }
+        await self.exchange.update_leverage(update)

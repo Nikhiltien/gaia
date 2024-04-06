@@ -121,11 +121,15 @@ class DealerSocket:
         self.socket = socket
 
     async def send_message(self, message):
-        await self.socket.send(message)
+        # Assume 'message' is a Python tuple.
+        serialized_message = json.dumps(message).encode('utf-8')
+        await self.socket.send(serialized_message)
 
     async def receive_message(self):
         message = await self.socket.recv()
-        return message
+        # Assume the incoming message is JSON serialized.
+        deserialized_message = json.loads(message.decode('utf-8'))
+        return deserialized_message
 
     def close(self):
         self.socket.close()
@@ -135,11 +139,15 @@ class RouterSocket:
         self.socket = socket
 
     async def send_message(self, identity, message):
-        await self.socket.send_multipart([identity, b'', message])
+        # Assume 'message' is a Python tuple.
+        serialized_message = json.dumps(message).encode('utf-8')
+        await self.socket.send_multipart([identity, b'', serialized_message])
 
     async def receive_message(self):
         identity, _, message = await self.socket.recv_multipart()
-        return identity, message
+        # Assume the incoming message is JSON serialized.
+        deserialized_message = json.loads(message.decode('utf-8'))
+        return identity, deserialized_message
 
     def close(self):
         self.socket.close()

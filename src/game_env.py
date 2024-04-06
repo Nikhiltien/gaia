@@ -22,6 +22,7 @@ class GameEnv(gym.Env):
 
         self.feed = feed
         self.send = send_socket
+        self.action_space = GameActions(self.send)
 
         self.max_depth = max_depth
         self.max_drawdown = max_drawdown
@@ -37,7 +38,8 @@ class GameEnv(gym.Env):
         while True:
             balances = self.feed.balances._unwrap()
             print(f"Status \nCash: {balances[-1][1] if balances.size > 0 else 0} \nInventory: {self.get_inventory_value()}")
-            print(f"RNN Dim: {self.get_rnn_data().shape}")
+            # print(f"Active Orders: {self.feed.active_orders}, Executions: {self.feed.executions}")
+            # print(f"RNN Dim: {self.get_rnn_data().shape}")
             await asyncio.sleep(15)
         
     def get_inventory_value(self) -> Tuple[float, dict]:
@@ -47,10 +49,9 @@ class GameEnv(gym.Env):
             if prices.size > 0:
                 last_price = prices[-1][4]  # Assuming the closing price as the last price.
                 position_value = item['qty'] * last_price * item['leverage']
-                print(item['leverage'])
                 individual_values[symbol] = position_value
                 total_value += position_value
-        return total_value, individual_values
+        return total_value / item['leverage'], individual_values
 
     def get_balance(self):
         balances = self.feed.balances._unwrap()
@@ -72,27 +73,6 @@ class GameEnv(gym.Env):
         
         return rnn_input_array
 
-    async def update_leverage(self, symbol: str, leverage: int, is_cross: bool = True):
-        leverage_update_msg = {
-            "action": "update_leverage",
-            "symbol": symbol,
-            "leverage": leverage,
-            "is_cross": is_cross
-        }
-
-        await self.send.send(leverage_update_msg)
-
-        if symbol in self.inventory:
-            self.inventory[symbol]['leverage'] = leverage
-        else:
-            self.inventory[symbol] = {
-                'qty': 0,
-                'avg_price': 0,
-                'leverage': leverage
-            }
-
-        self.logger.info(f"Leverage updated for {symbol}: {leverage}")
-
     def step(self):
         pass
 
@@ -100,7 +80,14 @@ class GameEnv(gym.Env):
         pass
 
 
-class GameActions():
-    @property
-    def start(self):
-        return 0
+class GameActions(gym.Env):
+    def __init__(self, socket: DealerSocket) -> None:
+        self.send = socket
+
+    async def adjust_leverage(self, symbol: str, leverage: float, cross_margin: bool = True) -> None:
+        update = {
+            'action': 'adjust_leverage',
+            'data': (symbol, leverage, cross_margin)
+        }
+
+        await self.send.send_message((update))
