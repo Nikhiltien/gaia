@@ -123,7 +123,6 @@ class HyperLiquid(WebsocketClient, Adapter):
             symbol = result.get("coin")
             channel = result.get("type")
             self.logger.info(f"Unsubscription successful for {channel}: {symbol if symbol else ''}")
-            # Handle unsubscription logic, like removing from self.subscriptions
             # if req_id in self.subscriptions:
             #     del self.subscriptions[req_id]
 
@@ -327,7 +326,7 @@ class HyperLiquid(WebsocketClient, Adapter):
 
         full_response = {
             "type": "leverage",
-            "status": response.get("status"),
+            "status": "ok" if response["response"]["type"] == "default" and response["status"] == 'ok' else "error",
             "symbol": leverage_details.get("symbol"),
             "leverage": leverage_details.get("leverage"),
             "cross_margin": leverage_details.get("cross_margin"),

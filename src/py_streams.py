@@ -37,24 +37,6 @@ class Streams:
             self._logger.error(f"Error processing update: {e}")
             return
 
-
-class Order_Book:
-    def __init__(self, feed: Feed) -> None:
-        self.feed = feed
-
-    def update_book(self, update: Dict[str, List[Any]]) -> None:
-        symbol = update['symbol']
-        _timestamp = update['timestamp']
-        bids = update.get('bids', [])
-        asks = update.get('asks', [])
-
-        bids_array = np.array([[float(bid['price']), float(bid['qty'])] for bid in sorted(bids, key=lambda x: -float(x['price']), reverse=True)[:self.feed.max_depth]], dtype=float)
-        asks_array = np.array([[float(ask['price']), float(ask['qty'])] for ask in sorted(asks, key=lambda x: float(x['price']))[:self.feed.max_depth]], dtype=float)
-
-        snapshot = np.vstack((bids_array, asks_array))
-        self.feed.order_books[symbol].append(snapshot)
-
-
 class Inventory:
     def __init__(self, feed: Feed) -> None:
         self.feed = feed
@@ -100,7 +82,7 @@ class Inventory:
                         logging.error(f"Invalid format in position data: {position}")
                 self.feed.inventory = new_inventory
 
-            # self.feed.ready = True
+            # self.feed.ready = True TODO
             logging.info('Inventory is synced.')
 
     def _process_fills(self, fill: List):
@@ -139,9 +121,6 @@ class Inventory:
 
         self.feed.inventory[symbol] = {'qty': updated_qty, 'avg_price': updated_avg_price, 'leverage': leverage}
 
-    def _process_liquidations(self, liquidations: List) -> None:
-        pass
-
     def _process_leverage(self, leverage: Dict) -> None:
         symbol = leverage['symbol']
         if leverage['status'] == 'ok':
@@ -156,6 +135,9 @@ class Inventory:
             logging.info(f"Leverage updated for {symbol}: x{leverage['leverage']}")
         else:
             logging.error(f"Unexpected response from API: {leverage}")
+
+    def _process_liquidations(self, liquidations: List) -> None:
+        pass
 
     def _process_funding(self, funding: List) -> None:
         pass
@@ -174,6 +156,21 @@ class Orders:
                 if not current_order or current_order != order:
                     self.feed.active_orders[order_id] = order
 
+class Order_Book:
+    def __init__(self, feed: Feed) -> None:
+        self.feed = feed
+
+    def update_book(self, update: Dict[str, List[Any]]) -> None:
+        symbol = update['symbol']
+        _timestamp = update['timestamp']
+        bids = update.get('bids', [])
+        asks = update.get('asks', [])
+
+        bids_array = np.array([[float(bid['price']), float(bid['qty'])] for bid in sorted(bids, key=lambda x: -float(x['price']), reverse=True)[:self.feed.max_depth]], dtype=float)
+        asks_array = np.array([[float(ask['price']), float(ask['qty'])] for ask in sorted(asks, key=lambda x: float(x['price']))[:self.feed.max_depth]], dtype=float)
+
+        snapshot = np.vstack((bids_array, asks_array))
+        self.feed.order_books[symbol].append(snapshot)
 
 class Trades:
     def __init__(self, feed: Feed) -> None:

@@ -44,11 +44,55 @@ order2 = {
     }
 }
 
+order3 = {
+    "symbol": "ETH",
+    "side": "SELL",
+    "price": 3700.0,
+    "qty": 0.01,
+    "reduceOnly": False,
+    "orderType": {
+        "limit": {
+            "tif": "Gtc"
+        }
+    }
+}
+
 leverage = {
     "leverage": 50,
     "symbol": "ETH",
     "is_cross": True
 }
+
+async def place_orders(adapter: HyperLiquid):
+
+    await asyncio.sleep(5)
+    order_result = await adapter.place_order(order_details=order3)
+    print(order_result)
+    await asyncio.sleep(19)
+    # await adapter.update_leverage(leverage_details=leverage)
+    resp = await adapter.place_order(order_details=order)
+    print(resp)
+    await asyncio.sleep(10)
+    resp2 = await adapter.place_order(order_details=order2)
+    print(resp2)
+
+    await asyncio.sleep(5)
+    cancel = None
+    order_status = None
+    if order_result["status"] == "ok":
+        status = order_result["response"]["data"]["statuses"][0]
+        if "resting" in status:
+            order_status = status["resting"]["oid"]
+
+            cancel = {
+                "symbol": "ETH",
+                "order_id": order_status
+            }
+
+    if cancel:
+        cancel_resp = await adapter.cancel_order(order_details=cancel)
+        print(cancel_resp)
+
 
 class GAIA:
     def __init__(self, feed: Feed) -> None:
@@ -82,15 +126,6 @@ class GAIA:
         await adapter.subscribe_klines({'symbol': 'ETH'}, "1m")
         await adapter.subscribe_order_book({'symbol': 'ETH'})
         await adapter.subscribe_trades({'symbol': 'ETH'})
-
-        async def place_orders(adapter: HyperLiquid):
-            await asyncio.sleep(19)
-            # await adapter.update_leverage(leverage_details=leverage)
-            resp = await adapter.place_order(order_details=order)
-            print(resp)
-            await asyncio.sleep(10)
-            resp2 = await adapter.place_order(order_details=order2)
-            print(resp2)
 
         order_task = asyncio.create_task(place_orders(adapter))
 

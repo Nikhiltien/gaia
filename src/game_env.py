@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import gymnasium as gym
 
+from datetime import datetime, timedelta
 from typing import List, Tuple
 from src.feed import Feed
 from src.zeromq.zeromq import DealerSocket, PublisherSocket
@@ -38,12 +39,60 @@ class GameEnv(gym.Env):
             self.actions.adjust_leverage(contract['symbol'], self.default_leverage, True)
 
         while True:
-            balances = self.feed.balances._unwrap()
-            print(f"Status \nCash: {balances[-1][1] if balances.size > 0 else 0} \nInventory: {self.get_inventory_value()}")
-            # print(f"Active Orders: {self.feed.active_orders}, Executions: {self.feed.executions}")
-            # print(f"RNN Dim: {self.get_rnn_data().shape}")
-            await asyncio.sleep(15)
+            self.get_status()
+            await asyncio.sleep(5)
         
+    def get_status(self):
+        balances = self.feed.balances._unwrap()
+        pnl_1h = self.calculate_pnl_1h()
+        active_orders_count = len(self.feed.active_orders)
+        executions_1h = self.calculate_executions_1h()
+        max_drawdown_1h = self.calculate_max_drawdown_1h()
+
+        status_message = (
+            f"\n----- Status -----\n"
+            f"Cash: {balances[-1][1] if balances.size > 0 else 0:.2f}\n"
+            f"Inventory Value: {self.get_inventory_value()[0]:.2f}\n"
+            f"Active Orders: {active_orders_count}\n"
+            f"1H PnL: {pnl_1h:.2f}\n"
+            f"1H Executions: {executions_1h}\n"
+            f"1H Drawdown: {max_drawdown_1h:.2f}\n"
+        )
+
+        print(status_message)
+
+    def calculate_pnl_1h(self):
+        now = datetime.now()
+        one_hour_ago = now - timedelta(hours=1)
+        pnl_1h = sum(
+            float(fill['closedPnL'])
+            for fill in self.feed.executions
+            if one_hour_ago <= datetime.fromtimestamp(fill['timestamp'] / 1000.0) <= now
+        )
+        return pnl_1h
+
+    def calculate_executions_1h(self):
+        now = datetime.now()
+        one_hour_ago = now - timedelta(hours=1)
+        executions_1h = sum(
+            1 for execution in self.feed.executions
+            if one_hour_ago <= datetime.fromtimestamp(execution['timestamp'] / 1000.0) <= now
+        )
+        return executions_1h
+
+    def calculate_max_drawdown_1h(self):
+        # Assuming you have some logic to calculate or retrieve drawdown
+        now = datetime.now()
+        one_hour_ago = now - timedelta(hours=1)
+        drawdowns = [
+            # You'll need to replace this logic with actual drawdown calculation
+            np.random.uniform(-5, 0)  # Placeholder: replace with your logic
+            for _ in range(60)  # Assuming one value per minute, replace as necessary
+            if one_hour_ago <= now - timedelta(minutes=1) * _ <= now
+        ]
+        max_drawdown_1h = min(drawdowns) if drawdowns else 0
+        return max_drawdown_1h
+
     def get_inventory_value(self) -> Tuple[float, dict]:
         total_value, individual_values = 0.0, {}
         for symbol, item in self.feed.inventory.items():

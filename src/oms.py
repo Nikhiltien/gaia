@@ -34,7 +34,7 @@ class OMS():
         pass
 
     async def cancel_all_orders(self):
-        pass
+        await self.exchange.cancel_all_orders()
 
     async def set_leverage(self, leverage: Tuple[str, float, bool]) -> None:
         """
