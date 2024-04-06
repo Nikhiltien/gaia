@@ -1,33 +1,31 @@
 import torch
 import asyncio
 import logging
-import datetime
 import numpy as np
 import gymnasium as gym
 
 from typing import List, Tuple
 from src.feed import Feed
-from src.zeromq.zeromq import DealerSocket
+from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
 MAX_STEPS = 25
-MAX_DEPTH = 10
-SEQUENCE_LENGTH = 100
+SEQUENCE_LENGTH = 15
 
 
 class GameEnv(gym.Env):
-    def __init__(self, feed: Feed, send_socket: DealerSocket,
-                 max_depth=100, max_drawdown=0, margin=True) -> None:
+    def __init__(self, feed: Feed, send_socket: PublisherSocket,
+                 default_leverage=5, max_depth=100, max_drawdown=0, margin=True) -> None:
         self.logger = logging.getLogger(__name__)
 
         self.feed = feed
-        self.send = send_socket
-        self.action_space = GameActions(self.send)
+        self.actions = GameActions(send_socket)
 
-        self.max_depth = max_depth
-        self.max_drawdown = max_drawdown
         self.margin = margin
         self.inital_cash = None
+        self.default_leverage = default_leverage
+        self.max_depth = max_depth
+        self.max_drawdown = max_drawdown
 
         self.state = {}
         self.ready = False
@@ -35,6 +33,10 @@ class GameEnv(gym.Env):
         self.step = 0
 
     async def start(self):
+
+        for contract in self.feed.contracts:
+            self.actions.adjust_leverage(contract['symbol'], self.default_leverage, True)
+
         while True:
             balances = self.feed.balances._unwrap()
             print(f"Status \nCash: {balances[-1][1] if balances.size > 0 else 0} \nInventory: {self.get_inventory_value()}")
@@ -81,13 +83,14 @@ class GameEnv(gym.Env):
 
 
 class GameActions(gym.Env):
-    def __init__(self, socket: DealerSocket) -> None:
+    def __init__(self, socket: PublisherSocket) -> None:
         self.send = socket
 
-    async def adjust_leverage(self, symbol: str, leverage: float, cross_margin: bool = True) -> None:
+    def adjust_leverage(self, symbol: str, leverage: float, cross_margin: bool = True) -> None:
         update = {
-            'action': 'adjust_leverage',
-            'data': (symbol, leverage, cross_margin)
+            'symbol': symbol,
+            'leverage': leverage,
+            'cross_margin': cross_margin
         }
 
-        await self.send.send_message((update))
+        self.send.publish_data('adjust_leverage', update)

@@ -144,16 +144,18 @@ class Inventory:
 
     def _process_leverage(self, leverage: Dict) -> None:
         symbol = leverage['symbol']
-        if symbol in self.feed.inventory:
-            self.feed.inventory[symbol]['leverage'] = leverage
+        if leverage['status'] == 'ok':
+            if symbol in self.feed.inventory:
+                self.feed.inventory[symbol]['leverage'] = leverage['leverage']
+            else:
+                self.feed.inventory[symbol] = {
+                    'qty': 0,
+                    'avg_price': 0,
+                    'leverage': leverage['leverage']
+                }
+            logging.info(f"Leverage updated for {symbol}: x{leverage['leverage']}")
         else:
-            self.feed.inventory[symbol] = {
-                'qty': 0,
-                'avg_price': 0,
-                'leverage': leverage
-            }
-
-        self.logger.info(f"Leverage updated for {symbol}: {leverage}")
+            logging.error(f"Unexpected response from API: {leverage}")
 
     def _process_funding(self, funding: List) -> None:
         pass

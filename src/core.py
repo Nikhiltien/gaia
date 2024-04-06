@@ -44,6 +44,12 @@ order2 = {
     }
 }
 
+leverage = {
+    "leverage": 50,
+    "symbol": "ETH",
+    "is_cross": True
+}
+
 class GAIA:
     def __init__(self, feed: Feed) -> None:
         self.feed = feed
@@ -62,32 +68,29 @@ class GAIA:
         public = '0x7195d5fBC22Afa1FF6A0A25591285Db7a81838D4'
         # vault = '0xb22177120b2f33d39770a25993bcb14f2753bae6'
 
+        router_socket = self.zmq.create_subscriber(port=50020, name="OMS")
+        send_socket = self.zmq.create_publisher(port=50020)
         recv_socket = self.zmq.create_subscriber(port=50000, name="Streams")
-        send_socket = self.zmq.create_dealer_socket(identity="GameEnv")
-        pub_socket, _ = self.zmq.create_publisher(name="HyperLiquid_publisher")
+        pub_socket = self.zmq.create_publisher(port=50000)
 
         # api_manager = APIManager()
         # adapter = await api_manager.load('HYPERLIQUID')
 
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
-        
+
         await adapter.subscribe_klines({'symbol': 'ETH'}, "1m")
         await adapter.subscribe_order_book({'symbol': 'ETH'})
         await adapter.subscribe_trades({'symbol': 'ETH'})
 
-        async def place_orders(adapter):
-            # Your order placing logic
-            # while True:
+        async def place_orders(adapter: HyperLiquid):
             await asyncio.sleep(19)
-            # Assuming 'order' is defined elsewhere or passed as a parameter
+            # await adapter.update_leverage(leverage_details=leverage)
             resp = await adapter.place_order(order_details=order)
             print(resp)
             await asyncio.sleep(10)
-            # Assuming 'order2' is defined elsewhere or passed as a parameter
             resp2 = await adapter.place_order(order_details=order2)
             print(resp2)
-                # return
 
         order_task = asyncio.create_task(place_orders(adapter))
 
@@ -97,9 +100,9 @@ class GAIA:
 
         tasks = [
             asyncio.create_task(Streams(self.feed, recv_socket).start()),
-            asyncio.create_task(GameEnv(self.feed, send_socket).start()),
+            asyncio.create_task(GameEnv(self.feed, send_socket, max_depth=10).start()),
+            asyncio.create_task(OMS(self.feed, adapter, router_socket).run()),
             # asyncio.create_task(APIManager().start()),
-            # asyncio.create_task(OMS(adapter=adapter).start()),
             # asyncio.create_task(Console().start()),
             ]
         

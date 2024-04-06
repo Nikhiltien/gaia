@@ -318,13 +318,24 @@ class HyperLiquid(WebsocketClient, Adapter):
         )
         return response
 
-    async def update_leverage(self, leverage_details: Dict):
+    async def update_leverage(self, leverage_details: Dict) -> Dict:
         response = self.exchange.update_leverage(
             leverage=leverage_details.get("leverage"),
             coin=leverage_details.get("symbol"),
             is_cross=leverage_details.get("is_cross", True)
         )
-        return response
+
+        full_response = {
+            "type": "leverage",
+            "status": response.get("status"),
+            "symbol": leverage_details.get("symbol"),
+            "leverage": leverage_details.get("leverage"),
+            "cross_margin": leverage_details.get("cross_margin"),
+        }
+
+        if self.msg_callback:
+            self.msg_callback("inventory", full_response)
+        return full_response
 
     async def update_isolated_margin(self, margin_details: Dict):
         response = self.exchange.update_isolated_margin(

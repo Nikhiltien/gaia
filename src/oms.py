@@ -14,11 +14,17 @@ class OMS():
         self.feed = feed
         self.router = router
 
+        self.is_running = True
+
         atexit.register(self.exit)
         signal.signal(signal.SIGTERM, self.exit)
 
-    def run(self):
-        pass
+    async def run(self):
+        await self.router.listen(self._handle_message)
+
+    def _handle_message(self, topic: str, data: dict) -> None:
+        if topic == 'adjust_leverage':
+            asyncio.create_task(self.set_leverage(data))
 
     def exit(self):
         pass
@@ -35,8 +41,8 @@ class OMS():
         args: symbol, leverage, cross margin.
         """
         update = {
-            'symbol': leverage[0],
-            'leverage': leverage[1],
-            'is_cross': leverage[2],
+            'symbol': leverage['symbol'],
+            'leverage': leverage['leverage'],
+            'is_cross': leverage['cross_margin'],
         }
         await self.exchange.update_leverage(update)

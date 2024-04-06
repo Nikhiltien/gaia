@@ -34,18 +34,19 @@ class ZeroMQ:
         else:
             print(f"{pb2_file} already exists.")
 
-    def create_publisher(self, name):
+    def create_publisher(self, port: int):
         socket = self.context.socket(zmq.PUB)
-        for port in self.publisher_ports:
-            try:
-                socket.bind(f"tcp://*:{port}")
-                break
-            except zmq.error.ZMQError as e:
-                if e.errno != zmq.EADDRINUSE:
-                    raise
-        else:
-            raise ValueError("No available publisher ports in the range.")
-        return PublisherSocket(socket), port
+        socket.bind(f"tcp://*:{port}")
+        # for port in self.publisher_ports:
+        #     try:
+        #         socket.bind(f"tcp://*:{port}")
+        #         break
+        #     except zmq.error.ZMQError as e:
+        #         if e.errno != zmq.EADDRINUSE:
+        #             raise
+        # else:
+        #     raise ValueError("No available publisher ports in the range.")
+        return PublisherSocket(socket)
 
     def create_subscriber(self, port, name):
         socket = self.context.socket(zmq.SUB)
@@ -54,23 +55,19 @@ class ZeroMQ:
         socket.setsockopt_string(zmq.SUBSCRIBE, '')
         return SubscriberSocket(socket)
 
-    def create_dealer_socket(self, identity: str = None):
+    def create_dealer_socket(self, port: int, identity: str = None):
         socket = self.context.socket(zmq.DEALER)
         if identity:
             socket.setsockopt_string(zmq.IDENTITY, identity)
-        port = next(self.dealer_router_ports, None)
-        if port is None:
-            raise ValueError("No available dealer-router ports in the range.")
-        socket.bind(f"tcp://*:{port}")
-        return DealerSocket(socket), port
+        address = f"tcp://localhost:{port}"
+        socket.connect(address)
+        return DealerSocket(socket)
 
-    def create_router_socket(self, name):
+    def create_router_socket(self, port: int):
         socket = self.context.socket(zmq.ROUTER)
-        port = next(self.dealer_router_ports, None)
-        if port is None:
-            raise ValueError("No available dealer-router ports in the range.")
-        socket.bind(f"tcp://*:{port}")
-        return RouterSocket(socket), port
+        address = f"tcp://*:{port}"
+        socket.bind(address)
+        return RouterSocket(socket)
 
     def close_all(self):
         self.context.term()
@@ -117,16 +114,16 @@ class SubscriberSocket:
         self.socket.close()
 
 class DealerSocket:
-    def __init__(self, socket):
+    def __init__(self, socket: zmq.Context):
         self.socket = socket
 
-    async def send_message(self, message):
-        # Assume 'message' is a Python tuple.
+    async def send_message(self, message: Any) -> Any:
         serialized_message = json.dumps(message).encode('utf-8')
-        await self.socket.send(serialized_message)
+        self.socket.send(serialized_message, timeout=2)
+        print(message if message else "ERROR")
 
-    async def receive_message(self):
-        message = await self.socket.recv()
+    async def receive_message(self: Any) -> Any:
+        message = self.socket.recv()
         # Assume the incoming message is JSON serialized.
         deserialized_message = json.loads(message.decode('utf-8'))
         return deserialized_message
@@ -141,13 +138,14 @@ class RouterSocket:
     async def send_message(self, identity, message):
         # Assume 'message' is a Python tuple.
         serialized_message = json.dumps(message).encode('utf-8')
-        await self.socket.send_multipart([identity, b'', serialized_message])
+        self.socket.send_multipart([identity, b'', serialized_message])
 
     async def receive_message(self):
-        identity, _, message = await self.socket.recv_multipart()
+        identity, _, message = self.socket.recv_multipart()
         # Assume the incoming message is JSON serialized.
         deserialized_message = json.loads(message.decode('utf-8'))
-        return identity, deserialized_message
+        print(identity, deserialized_message)
+        return deserialized_message
 
     def close(self):
         self.socket.close()
