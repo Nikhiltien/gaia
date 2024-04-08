@@ -21,7 +21,7 @@ from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
 order = {
     "symbol": "ETH",
     "side": "BUY",
-    "price": 3400.0,
+    "price": 3800.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -34,7 +34,7 @@ order = {
 order2 = {
     "symbol": "ETH",
     "side": "SELL",
-    "price": 3100.0,
+    "price": 3400.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -47,7 +47,7 @@ order2 = {
 order3 = {
     "symbol": "ETH",
     "side": "SELL",
-    "price": 3700.0,
+    "price": 4000.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -68,11 +68,11 @@ async def place_orders(adapter: HyperLiquid):
     await asyncio.sleep(5)
     order_result = await adapter.place_order(order_details=order3)
     print(order_result)
-    await asyncio.sleep(19)
-    await adapter.update_leverage(leverage_details=leverage)
+    await asyncio.sleep(5)
+    # await adapter.update_leverage(leverage_details=leverage)
     resp = await adapter.place_order(order_details=order)
     print(resp)
-    await asyncio.sleep(10)
+    await asyncio.sleep(69)
     resp2 = await adapter.place_order(order_details=order2)
     print(resp2)
 
@@ -92,6 +92,12 @@ async def place_orders(adapter: HyperLiquid):
     if cancel:
         cancel_resp = await adapter.cancel_order(order_details=cancel)
         print(cancel_resp)
+
+    resp3 = await adapter.place_order(order_details=order)
+    print(resp3)
+    await asyncio.sleep(90)
+    resp4 = await adapter.place_order(order_details=order2)
+    print(resp4)
 
 
 class GAIA:

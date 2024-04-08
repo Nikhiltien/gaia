@@ -93,7 +93,10 @@ class SubscriberSocket:
         self.poller.register(socket, zmq.POLLIN)
         self.socket.setsockopt_string(zmq.SUBSCRIBE, '')
 
-    async def listen(self, callback: Any) -> None:
+    async def listen(self, callback: Any) -> Dict:
+        """
+        Callback must be async AND takes 2 arguments, topic and data.
+        """
         while True:
             events = await self.poller.poll()  # Await events without blocking
             if events:
@@ -102,7 +105,7 @@ class SubscriberSocket:
                     if len(parts) == 2:
                         topic, message = parts[0].decode(), parts[1].decode()
                         data = json.loads(message)
-                        callback(topic, data)
+                        await callback(topic, data)
                 except zmq.Again:
                     continue
                 except json.JSONDecodeError:

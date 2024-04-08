@@ -23,13 +23,13 @@ class OMS():
     async def run(self):
         await self.router.listen(self._handle_message)
 
-    def _handle_message(self, topic: str, data: dict) -> None:
+    async def _handle_message(self, topic: str, data: dict) -> None:
         if topic == 'adjust_leverage':
-            asyncio.create_task(self.set_leverage(data))
+            await self.set_leverage(data)
         elif topic == 'cancel_all':
-            asyncio.create_task(self.cancel_all_orders())
+            await self.cancel_all_orders()
         elif topic == 'cancel':
-            asyncio.create_task(self.cancel_order(data))
+            await self.cancel_order(data)
 
     def exit(self):
         pass

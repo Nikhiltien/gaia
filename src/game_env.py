@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import gymnasium as gym
 
+# from src.models.tet.tet import Tet
 from datetime import datetime, timedelta
 from typing import List, Tuple
 from numpy.typing import NDArray
@@ -20,6 +21,7 @@ class GameEnv(gym.Env):
                  default_leverage=5, max_depth=100, max_drawdown=0, margin=True) -> None:
         self.logger = logging.getLogger(__name__)
 
+        # self.model = model
         self.feed = feed
         self.actions = GameActions(send_socket)
 
@@ -51,7 +53,7 @@ class GameEnv(gym.Env):
         pnl_1h = self.calculate_pnl_1h()
         active_orders_count = len(self.feed.active_orders)
         executions_1h = self.calculate_executions_1h()
-        max_drawdown_1h = self.calculate_max_drawdown_1h()
+        # drawdown_1h = self.calculate_drawdown_1h()
 
         status_message = (
             f"\n----- Status -----\n"
@@ -60,7 +62,7 @@ class GameEnv(gym.Env):
             f"Active Orders: {active_orders_count}\n"
             f"1H PnL: {pnl_1h:.2f}\n"
             f"1H # of Trades: {executions_1h}\n"
-            # TODO f"1H Drawdown: {max_drawdown_1h:.2f}\n"
+            # TODO f"1H Drawdown: {drawdown_1h:.2f}\n"
             # TODO "Unrealized PNL"
             # TODO "Account Leverage"
         )
@@ -89,7 +91,7 @@ class GameEnv(gym.Env):
         )
         return executions_1h
 
-    def calculate_max_drawdown_1h(self):
+    def calculate_drawdown_1h(self):
         # Assuming you have some logic to calculate or retrieve drawdown
         now = datetime.now()
         one_hour_ago = now - timedelta(hours=1)
