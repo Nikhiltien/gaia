@@ -46,8 +46,8 @@ order2 = {
 
 order3 = {
     "symbol": "ETH",
-    "side": "SELL",
-    "price": 4000.0,
+    "side": "BUY",
+    "price": 3200.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -67,14 +67,14 @@ async def place_orders(adapter: HyperLiquid):
 
     await asyncio.sleep(5)
     order_result = await adapter.place_order(order_details=order3)
-    print(order_result)
+    logging.info(order_result)
     await asyncio.sleep(5)
     # await adapter.update_leverage(leverage_details=leverage)
     resp = await adapter.place_order(order_details=order)
-    print(resp)
-    await asyncio.sleep(69)
+    logging.info(resp)
+    await asyncio.sleep(15)
     resp2 = await adapter.place_order(order_details=order2)
-    print(resp2)
+    logging.info(resp2)
 
     await asyncio.sleep(5)
     cancel = None
@@ -91,17 +91,19 @@ async def place_orders(adapter: HyperLiquid):
 
     if cancel:
         cancel_resp = await adapter.cancel_order(order_details=cancel)
-        print(cancel_resp)
+        logging.info(cancel_resp)
 
     resp3 = await adapter.place_order(order_details=order)
-    print(resp3)
-    await asyncio.sleep(90)
+    logging.info(resp3)
+    await asyncio.sleep(10)
     resp4 = await adapter.place_order(order_details=order2)
-    print(resp4)
+    logging.info(resp4)
 
 
 class GAIA:
     def __init__(self, feed: Feed) -> None:
+        self.logger = logging.getLogger(__name__)
+
         self.feed = feed
         self.zmq = ZeroMQ()
 
@@ -135,9 +137,9 @@ class GAIA:
 
         order_task = asyncio.create_task(place_orders(adapter))
 
-        logging.info(f"Waiting for ready signal...")
+        self.logger.info(f"Waiting for ready signal...")
         await self._wait_for_confirmation()
-        logging.info(f"Signal received, starting strategy...")
+        self.logger.info(f"Signal received, starting strategy...")
 
         tasks = [
             asyncio.create_task(Streams(self.feed, recv_socket).start()),

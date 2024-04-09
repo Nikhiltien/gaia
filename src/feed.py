@@ -85,16 +85,18 @@ class Feed:
     def klines(self):
         return self._klines
 
-    async def enqueue_symbol_update(self, symbol: str):
+    async def enqueue_symbol_update(self, symbol: str) -> None:
         if symbol not in self._queued_symbols:
             await self.queue.put(symbol)
             self._queued_symbols.add(symbol)
 
-    async def dequeue_symbol_update(self):
+    async def peek_symbol_update(self) -> str:
         symbol = await self.queue.get()
+        return symbol
+
+    def dequeue_symbol_update(self, symbol: str) -> None:
         if symbol in self._queued_symbols:
             self._queued_symbols.remove(symbol)
-        return symbol
 
     def add_contract(self, contract: str) -> None:
         if contract not in self.inventory:
@@ -135,7 +137,8 @@ class Feed:
 
     async def add_trade(self, symbol: str, trade: NDArray) -> None:
         self._trades[symbol].append(trade)
-        await self.enqueue_symbol_update(symbol)
+        # Enqueuing symbol is unnecessary for Trades as Klines update per trade
+        # await self.enqueue_symbol_update(symbol)
 
     async def add_kline(self, symbol: str, kline: NDArray) -> None:
         unwrapped_data = self._klines[symbol]._unwrap()

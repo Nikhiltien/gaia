@@ -25,6 +25,8 @@ class HyperLiquid(WebsocketClient, Adapter):
         self.headers = {"Content-Type": "application/json"}
         self.base_url = 'https://api.hyperliquid.xyz'
 
+        self.book_depth = None
+
         self.address = None
         self.info = None
         self.exchange = None
@@ -399,7 +401,8 @@ class HyperLiquid(WebsocketClient, Adapter):
             }
         return await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
-    async def subscribe_order_book(self, contract, req_id=None):
+    async def subscribe_order_book(self, contract, num_levels=None, req_id=None):
+        self.book_depth = num_levels
         symbol = contract.get("symbol")
         params = {
             "type": "l2Book",
@@ -522,14 +525,14 @@ class HyperLiquid(WebsocketClient, Adapter):
             self.msg_callback("orders", parsed_orders)
         # print(f"Order Events: {parsed_orders}")
 
-    def _process_order_book(self, data, num_levels=None):
+    def _process_order_book(self, data):
         book = data.get("data", {}).get("levels", [])
         if len(book) == 2:
             bids, asks = book
             
             # Limit the number of levels if num_levels is specified; otherwise, use all levels
-            bids = bids[:num_levels] if num_levels is not None else bids
-            asks = asks[:num_levels] if num_levels is not None else asks
+            bids = bids[:self.book_depth] if self.book_depth is not None else bids
+            asks = asks[:self.book_depth] if self.book_depth is not None else asks
 
             parsed_book = {
                 "symbol": data.get("data", {}).get("coin"),
