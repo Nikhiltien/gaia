@@ -362,11 +362,11 @@ class HyperLiquid(WebsocketClient, Adapter):
 
         while True:
             user_state = await self.get_user_state()
-            open_orders = await self.get_open_orders()
+            # open_orders = await self.get_open_orders()
             if self.msg_callback:
                 self.msg_callback("sync", user_state)
-                if open_orders:
-                    self.msg_callback("orders", open_orders)
+                # if open_orders:
+                #     self.msg_callback("orders", open_orders)
             await asyncio.sleep(interval)
 
     async def subscribe_notifications(self, user_address=None, req_id=None):
@@ -499,7 +499,8 @@ class HyperLiquid(WebsocketClient, Adapter):
             parsed_events.append(parsed_event)
 
         if self.msg_callback:
-            self.msg_callback(topic, parsed_event)
+            for event in parsed_events:
+                self.msg_callback(topic, event)
         # print(f"User Events: {parsed_events}")
 
     def _process_orders(self, data):

@@ -60,7 +60,7 @@ class Inventory:
         if not self.feed.ready: # TODO
             cash_balance = sync.get('cash_balance')
             if cash_balance:
-                await self.feed.update_balance(float(cash_balance))
+                await self.feed.populate_balance_buffer(float(cash_balance))
             
             positions = sync.get('positions')
             if positions:
@@ -83,7 +83,7 @@ class Inventory:
             self.feed.ready = True # TODO
             logging.info('Inventory is synced.')
 
-    async def _process_fills(self, fill: List):
+    async def _process_fills(self, fill: Dict):
         self.feed.executions.append(fill)
 
         fee = float(fill['fee'])
@@ -161,11 +161,16 @@ class Order_Book:
         bids = update.get('bids', [])
         asks = update.get('asks', [])
 
-        bids_array = np.array([[float(bid['price']), float(bid['qty'])] for bid in sorted(bids, key=lambda x: -float(x['price']), reverse=True)[:self.feed.max_depth]], dtype=float)
-        asks_array = np.array([[float(ask['price']), float(ask['qty'])] for ask in sorted(asks, key=lambda x: float(x['price']))[:self.feed.max_depth]], dtype=float)
+        bids_array = np.array([[float(bid['price']), 
+                                float(bid['qty'])] for bid in sorted(bids, key=lambda x: -float(x['price']), 
+                                                  reverse=True)[:self.feed.max_depth]], dtype=float)
+        asks_array = np.array([[float(ask['price']), 
+                                float(ask['qty'])] for ask in sorted(asks, key=lambda x: float(x['price'])
+                                                                     )[:self.feed.max_depth]], dtype=float)
 
         snapshot = np.vstack((bids_array, asks_array))
         await self.feed.add_orderbook_snapshot(symbol, snapshot)
+
 
 class Trades:
     def __init__(self, feed: Feed) -> None:
@@ -174,8 +179,8 @@ class Trades:
     async def update_trades(self, update: List):
         for trade in update:
             symbol = trade['symbol']
-            side = 1 if trade['side'] == 'B' else -1
-            update = (float(trade['price']), side, float(trade['qty']), float(trade['timestamp']))
+            side = 1 if trade['side'] == 'B' else 0
+            update = (float(trade['timestamp']), side, float(trade['price']), float(trade['qty']))
             await self.feed.add_trade(symbol, update)
 
 

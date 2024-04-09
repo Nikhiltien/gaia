@@ -115,6 +115,11 @@ class Feed:
         if abs(balance) > BALANCE_CHANGE_THRESHOLD:
             await self.enqueue_symbol_update('Balance')
 
+    async def populate_balance_buffer(self, starting_balance: float) -> None:
+        now = dt.datetime.now(dt.timezone.utc).timestamp()
+        for _ in range(BUFFER_SIZE):
+            self._balances.append(np.array([now, starting_balance]))
+
     async def update_inventory(self, symbol: str, inventory: Dict):
         self._inventory[symbol].update((k.value if isinstance(k, InventoryField) else k, v) for k, v in inventory.items())
         await self.enqueue_symbol_update('Inventory')
@@ -149,8 +154,8 @@ class Feed:
 
     @property
     def _order_book_dim(self) -> int:
-        # 2 * bid price, bid qty, ask price, ask qty + 1 spread + 1 imbalance
-        return self.max_depth * 2 * 2 # + 1 + 1
+        # 2 * bid price, bid qty, ask price, ask qty # TODO + 1 spread + 1 imbalance + timestamp?
+        return self.max_depth * 2 * 2 # + 1 + 1 + 1
 
     @property
     def _trades_dim(self) -> int:

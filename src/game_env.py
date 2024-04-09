@@ -9,12 +9,13 @@ from datetime import datetime, timedelta
 from typing import List, Tuple
 from numpy.typing import NDArray
 from numpy_ringbuffer import RingBuffer
+from src.utils import math
 from src.feed import Feed
 from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
 MAX_STEPS = 25
-SEQUENCE_LENGTH = 3
+SEQUENCE_LENGTH = 5
 
 
 class GameEnv(gym.Env):
@@ -49,7 +50,7 @@ class GameEnv(gym.Env):
 
         while True:
             self.get_status()
-            await asyncio.sleep(5)
+            await asyncio.sleep(30)
 
     async def monitor_feed_updates(self):
         while True:
@@ -73,7 +74,7 @@ class GameEnv(gym.Env):
                 # Log the lengths.
                 for data_type, length in all_lengths.items():
                     if length < SEQUENCE_LENGTH:
-                        self.logger.info(f"{data_type} length {length} is below the required SEQUENCE_LENGTH {SEQUENCE_LENGTH}.")
+                        print(f"{data_type} length {length} is below the required SEQUENCE_LENGTH {SEQUENCE_LENGTH}.")
 
                 # Check if all data types across all symbols have sufficient data.
                 if all(length >= SEQUENCE_LENGTH for length in all_lengths.values()):
@@ -107,6 +108,7 @@ class GameEnv(gym.Env):
         pnl_1h = self.calculate_pnl_1h()
         active_orders_count = len(self.feed.active_orders)
         executions_1h = self.calculate_executions_1h()
+        unrealized_pnl = self.calculate_unrealized_pnl()
         # drawdown_1h = self.calculate_drawdown_1h()
 
         status_message = (
@@ -114,11 +116,13 @@ class GameEnv(gym.Env):
             f"Cash: {balances[-1][1] if balances.size > 0 else 0:.2f}\n"
             f"Inventory Value: {self.get_inventory_value()[0]:.2f}\n"
             f"Active Orders: {active_orders_count}\n"
+            f"Unrealized PnL: {unrealized_pnl:.2f}\n"
             f"1H PnL: {pnl_1h:.2f}\n"
             f"1H # of Trades: {executions_1h}\n"
             # TODO f"1H Drawdown: {drawdown_1h:.2f}\n"
             # TODO "Unrealized PNL"
             # TODO "Account Leverage"
+            f"------------------\n"
         )
 
         print(status_message)
@@ -135,6 +139,10 @@ class GameEnv(gym.Env):
         else:
             final_data = data_seq[-SEQUENCE_LENGTH:]
         return final_data
+    
+    def _get_snapshot(self, data: RingBuffer) -> np.ndarray:
+        unwrapped = data._unwrap()
+        return unwrapped[-1]
 
     def get_inventory_array(self) -> np.ndarray:
         """Converts inventory data into a numpy array."""
@@ -148,7 +156,7 @@ class GameEnv(gym.Env):
         """Consolidates active orders into a numpy array."""
         # Flatten the order details across all symbols into a single array
         orders_data = [
-            [order['side'] == 'BUY' and 1 or -1, order['price'], order['qty']]
+            [order['side'] == 'BUY' and 1 or 0, order['price'], order['qty']]
             for order in self.feed.active_orders.values()
         ]
         return np.array(orders_data, dtype=float) if orders_data else np.empty((0, 3))
@@ -160,8 +168,8 @@ class GameEnv(gym.Env):
 
     def process_symbol_data(self, update_symbol: str):
         """Processes the data for a given symbol."""
-        
-        order_book_data = self._get_data_sequence(self.feed.order_books[update_symbol])
+
+        order_book_data = self._get_snapshot(self.feed.order_books[update_symbol])
         trade_data = self._get_data_sequence(self.feed.trades[update_symbol])
         kline_data = self._get_data_sequence(self.feed.klines[update_symbol])
 
@@ -171,14 +179,18 @@ class GameEnv(gym.Env):
         """Placeholder function to simulate data processing with ML model."""
         # This function should be replaced with your actual model inference logic.
         # Currently, it just concatenates the data for demonstration purposes.
+        # print(f"Order Book shape: {order_book_data.shape}")
+        trades_imbalance = math.trades_imbalance(trades=trade_data , window=SEQUENCE_LENGTH)
+        print(f"Trades Array: {trade_data}")
+        print(f"Trades Imbalance: {trades_imbalance}")
+        # print(f"Klines shape: {kline_data.shape}")
         return np.concatenate((order_book_data.flatten(), trade_data.flatten(), kline_data.flatten()))
-
 
     def calculate_pnl_1h(self):
         now = datetime.now()
         one_hour_ago = now - timedelta(hours=1)
         pnl_1h = sum(
-            float(fill['closedPnL'])
+            float(fill['closedPnL']) - float(fill.get('fee', 0))
             for fill in self.feed.executions
             if one_hour_ago <= datetime.fromtimestamp(fill['timestamp'] / 1000.0) <= now
         )
@@ -206,6 +218,18 @@ class GameEnv(gym.Env):
         max_drawdown_1h = min(drawdowns) if drawdowns else 0
         return max_drawdown_1h
 
+    def calculate_unrealized_pnl(self):
+        unrealized_pnl = 0.0
+        for symbol, item in self.feed.inventory.items():
+            prices = self.feed.klines[symbol]._unwrap()
+            if prices.size > 0:
+                last_price = prices[-1][4]
+                position_value = item['qty'] * last_price
+                average_value = item['qty'] * item['avg_price']
+                unrealized_pnl += position_value - average_value
+
+        return unrealized_pnl
+
     def get_inventory_value(self) -> Tuple[float, dict]:
         total_value, individual_values = 0.0, {}
         for symbol, item in self.feed.inventory.items():
@@ -224,7 +248,7 @@ class GameEnv(gym.Env):
     def get_orders_for_symbol(self, symbol: str) -> NDArray:
         # Filter active orders by symbol
         filtered_orders = [
-            [order["side"] == "BUY" and 1 or -1,
+            [order["side"] == "BUY" and 1 or 0,
              order["price"],
              order["qty"],
              # order["timestamp"]

@@ -21,7 +21,7 @@ from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
 order = {
     "symbol": "ETH",
     "side": "BUY",
-    "price": 3800.0,
+    "price": 4000.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -34,7 +34,7 @@ order = {
 order2 = {
     "symbol": "ETH",
     "side": "SELL",
-    "price": 3400.0,
+    "price": 3200.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -47,8 +47,8 @@ order2 = {
 order3 = {
     "symbol": "ETH",
     "side": "BUY",
-    "price": 3200.0,
-    "qty": 0.01,
+    "price": 3000.0,
+    "qty": 0.005,
     "reduceOnly": False,
     "orderType": {
         "limit": {
@@ -72,7 +72,7 @@ async def place_orders(adapter: HyperLiquid):
     # await adapter.update_leverage(leverage_details=leverage)
     resp = await adapter.place_order(order_details=order)
     logging.info(resp)
-    await asyncio.sleep(15)
+    await asyncio.sleep(65)
     resp2 = await adapter.place_order(order_details=order2)
     logging.info(resp2)
 
@@ -95,7 +95,7 @@ async def place_orders(adapter: HyperLiquid):
 
     resp3 = await adapter.place_order(order_details=order)
     logging.info(resp3)
-    await asyncio.sleep(10)
+    await asyncio.sleep(55)
     resp4 = await adapter.place_order(order_details=order2)
     logging.info(resp4)
 
