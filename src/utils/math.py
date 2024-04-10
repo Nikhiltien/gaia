@@ -15,84 +15,42 @@ spec = [
     ('rb', RingBufferF64.class_type.instance_type),
 ]
 
-@jitclass(spec)
-class EMA:
-    """
-    Exponential Moving Average (EMA) with optional RingBuffer to store history.
-
-    Attributes:
-    -----------
-    window : int
-        The window size for the EMA calculation.
-
-    alpha : float
-        The smoothing factor applied to the EMA. Default is calculated as `3 / (window + 1)`.
-
-    fast : bool
-        If True, the history of calculated EMA values is not stored.
-
-    value : float
-        The current value of the EMA.
-
-    rb : RingBufferF64
-        A ring buffer to store EMA values history, activated if `fast` is False.
-    """
-    def __init__(self, window: int, alpha: Optional[float]=0, fast: bool=False):
-        self.window = window
-        self.alpha = alpha if alpha != 0 else 3 / (self.window + 1)
-        self.fast = fast
-        self.value = 0.0
-        self.rb = RingBufferF64(self.window)
-
-    def _recursive_ema_(self, update: float) -> float:
-        """
-        Internal method to calculate the EMA given a new data point.
-
-        Parameters:
-        -----------
-        update : float
-            The new data point to include in the EMA calculation.
-
-        Returns:
-        --------
-        float
-            The updated EMA value.
-        """
-        return self.alpha * update + (1 - self.alpha) * self.value
-
-    def initialize(self, arr_in: Array) -> None:
-        """
-        Initializes the EMA calculator with a series of data points.
-
-        Parameters:
-        -----------
-        arr_in : Iterable[float]
-            The initial series of data points to feed into the EMA calculator.
-        """
-        _ = self.rb.reset()
-        self.value = arr_in[0]
-        for val in arr_in:
-            self.value = self._recursive_ema_(val)
-            if not self.fast:
-                self.rb.appendright(self.value)
-
-    def update(self, new_val: float) -> None:
-        """
-        Updates the EMA calculator with a new data point.
-
-        Parameters:
-        -----------
-        new_val : float
-            The new data point to include in the EMA calculation.
-        """
-        self.value = self._recursive_ema_(new_val)
-        if not self.fast:
-            self.rb.appendright(self.value)
-
-
-
 @njit(cache=True)
-def ema_weights(window: int, reverse: bool=False, alpha: Optional[float]=0) -> Array:
+def ema(arr_in: NDArray, window: int, alpha: Optional[float]=0) -> NDArray:
+    """
+    Calculates the Exponential Moving Average (EMA) of an input array.
+
+    Parameters
+    ----------
+    arr_in : NDArray
+        The input array for which the EMA is calculated. Typically, this is an array of closing prices.
+    window : int
+        The window size for the EMA calculation, specifying the number of periods to consider for the moving average.
+    alpha : float, optional
+        The decay factor for the EMA calculation. If not provided, it is calculated as 3 / (window + 1).
+
+    Returns
+    -------
+    NDArray
+        An array of the same length as `arr_in`, containing the calculated EMA values.
+
+    Notes
+    -----
+    - The first EMA value is simply the first value of `arr_in`, as there's no preceding data to average.
+    - This implementation initializes the EMA calculation with the first data point in the input array.
+    """
+    alpha = 3 / float(window + 1) if alpha == 0 else alpha
+    n = arr_in.size
+    ewma = np.empty(n, dtype=np.float64)
+    ewma[0] = arr_in[0]
+
+    for i in range(1, n):
+        ewma[i] = (arr_in[i] * alpha) + (ewma[i-1] * (1 - alpha))
+
+    return ewma
+
+@njit
+def ema_weights(window: int, reverse: bool=False, alpha: Optional[float]=0) -> NDArray:
     """
     Calculate EMA (Exponential Moving Average)-like weights for a given window size.
 
@@ -107,7 +65,7 @@ def ema_weights(window: int, reverse: bool=False, alpha: Optional[float]=0) -> A
 
     Returns
     -------
-    Array
+    NDArray
         An array of EMA-like weights.
 
     Examples
@@ -122,7 +80,7 @@ def ema_weights(window: int, reverse: bool=False, alpha: Optional[float]=0) -> A
     array([0.5    , 0.25   , 0.125  , 0.0625 , 0.03125])
     """
     alpha = 3 / float(window + 1) if alpha == 0 else alpha
-    weights = np.empty(window, dtype=float64)
+    weights = np.empty(window, dtype=np.float64)
 
     for i in range(window):
         weights[i] = alpha * (1 - alpha) ** i
@@ -179,9 +137,22 @@ def trades_imbalance(trades: NDArray, window: int) -> float:
         trade_side = trades[i, 1]
         weighted_qty = np.log(1 + trades[i, 3]) * weights[i]
 
-        if trade_side == 0.0:
+        if trade_side == 1.0:
             delta_buys += weighted_qty
         else:
             delta_sells += weighted_qty
 
     return (delta_buys - delta_sells) / (delta_buys + delta_sells)
+
+def get_wmid(bba: NDArray) -> float:
+    """
+    Calculates the weighted mid price of the order book, considering the volume imbalance 
+    between the best bid and best ask.
+
+    Returns
+    -------
+    float
+        The weighted mid price, which accounts for the volume imbalance at the top of the book.
+    """
+    imb = bba[0, 1] / (bba[0, 1] + bba[1, 1])
+    return bba[0, 0] * imb + bba[1, 0] * (1 - imb)

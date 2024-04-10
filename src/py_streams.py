@@ -95,6 +95,8 @@ class Inventory:
         price = float(fill['price'])
         side = fill['side']
 
+        logging.info(f"Order filled: {symbol} {('BUY' if side == 'B' else 'SELL')} qty: {qty} price: {price}")
+
         if symbol not in self.feed.inventory:
             logging.error(f"Symbol not in contract list: {symbol}")
             return
@@ -176,12 +178,9 @@ class Trades:
     def __init__(self, feed: Feed) -> None:
         self.feed = feed
 
-    async def update_trades(self, update: List):
-        for trade in update:
-            symbol = trade['symbol']
-            side = 1 if trade['side'] == 'B' else 0
-            update = (float(trade['timestamp']), side, float(trade['price']), float(trade['qty']))
-            await self.feed.add_trade(symbol, update)
+    async def update_trades(self, update: List[Dict]) -> None:
+
+        await self.feed.add_trades(update)
 
 
 class Klines:

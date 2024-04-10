@@ -21,6 +21,16 @@ class InventoryField(Enum):
     DELTA = 'delta'
 
 
+class ModelTrades(Enum):
+    TIMESTAMP = 0
+    BUY_COUNT = 1
+    AVG_PRICE_BUY = 2
+    SUM_QTY_BUY = 3
+    SELL_COUNT = 4
+    AVG_PRICE_SELL = 5
+    SUM_QTY_SELL = 6
+
+
 class Feed:
     def __init__(self, contracts: List = None, max_depth=100, margin=True) -> None:
 
@@ -140,17 +150,23 @@ class Feed:
         self._order_books[symbol].append(book)
         await self.enqueue_symbol_update(symbol)
 
-    async def add_trade(self, symbol: str, trade: NDArray) -> None:
-        self._trades[symbol].append(trade)
-        # Enqueuing symbol is unnecessary for Trades as Klines update per trade
-        # await self.enqueue_symbol_update(symbol)
+    async def add_trades(self, trades: List[Dict]) -> None:
+        for trade in trades:
+            symbol = trade['symbol']
+            side = trade['side']
+            trade_array = (float(trade['timestamp']), side, float(trade['price']), float(trade['qty']))
+            self._trades[symbol].append(trade_array)
+       
+        await self.enqueue_symbol_update(symbol)
 
     async def add_kline(self, symbol: str, kline: NDArray) -> None:
         unwrapped_data = self._klines[symbol]._unwrap()
         if unwrapped_data.size > 0 and unwrapped_data[-1][0] == kline[0]:
             self._klines[symbol].pop()
         self._klines[symbol].append(kline)
-        await self.enqueue_symbol_update(symbol)
+
+        # Enqueuing symbol is unnecessary for Trades as Klines update per trade
+        # await self.enqueue_symbol_update(symbol)
 
     @property
     def _order_book_dim(self) -> int:

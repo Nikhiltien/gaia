@@ -15,7 +15,7 @@ from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
 MAX_STEPS = 25
-SEQUENCE_LENGTH = 5
+SEQUENCE_LENGTH = 10
 
 
 class GameEnv(gym.Env):
@@ -47,6 +47,8 @@ class GameEnv(gym.Env):
         self.actions.cancel_all_orders()
 
         asyncio.create_task(self.monitor_feed_updates())
+
+        await asyncio.sleep(5)
 
         while True:
             self.get_status()
@@ -177,13 +179,17 @@ class GameEnv(gym.Env):
 
     def process_data_with_model(self, order_book_data: np.ndarray, trade_data: np.ndarray, kline_data: np.ndarray) -> np.ndarray:
         """Placeholder function to simulate data processing with ML model."""
-        # This function should be replaced with your actual model inference logic.
-        # Currently, it just concatenates the data for demonstration purposes.
-        # print(f"Order Book shape: {order_book_data.shape}")
         trades_imbalance = math.trades_imbalance(trades=trade_data , window=SEQUENCE_LENGTH)
-        print(f"Trades Array: {trade_data}")
-        print(f"Trades Imbalance: {trades_imbalance}")
-        # print(f"Klines shape: {kline_data.shape}")
+
+        best_bid_price, best_bid_volume = order_book_data[9, 0], order_book_data[9, 1]
+        best_ask_price, best_ask_volume = order_book_data[-10, 0], order_book_data[-10, 1]
+        
+        bba = np.array([[best_bid_price, best_bid_volume], [best_ask_price, best_ask_volume]])
+
+        weighted_mid_price = math.get_wmid(bba)
+        print(trade_data)
+        print(trades_imbalance)
+
         return np.concatenate((order_book_data.flatten(), trade_data.flatten(), kline_data.flatten()))
 
     def calculate_pnl_1h(self):
@@ -240,6 +246,16 @@ class GameEnv(gym.Env):
                 individual_values[symbol] = position_value
                 total_value += position_value
         return total_value / item['leverage'], individual_values
+
+    def get_mid_price(self, symbol: str):
+        order_book_data = self.feed.order_books[symbol]._unwrap()[-1]
+
+        best_bid_price, best_bid_volume = order_book_data[9, 0], order_book_data[9, 1]
+        best_ask_price, best_ask_volume = order_book_data[-10, 0], order_book_data[-10, 1]
+        
+        bba = np.array([[best_bid_price, best_bid_volume], [best_ask_price, best_ask_volume]])
+
+        return math.get_wmid(bba)
 
     def get_balance(self):
         balances = self.feed.balances._unwrap()

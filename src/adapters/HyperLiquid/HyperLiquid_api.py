@@ -555,10 +555,10 @@ class HyperLiquid(WebsocketClient, Adapter):
         for trade in data.get("data"):
             trades.append({
                 "symbol": trade["coin"],
-                "side": trade["side"],
+                "side": 1 if trade['side'] == 'B' else 0,
                 "price": float(trade["px"]),
                 "qty": float(trade["sz"]),
-                "timestamp": trade["time"],
+                "timestamp": float(trade["time"]),
                 "hash": trade["hash"],
                 "trade_id": trade["tid"]
             })
