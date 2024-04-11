@@ -131,11 +131,10 @@ class GAIA:
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
 
-        await adapter.subscribe_klines({'symbol': 'ETH'}, "1m")
-        await adapter.subscribe_order_book({'symbol': 'ETH'})
-        await adapter.subscribe_trades({'symbol': 'ETH'})
+        await adapter.subscribe_all_symbol(self.feed.contracts)
 
-        order_task = asyncio.create_task(place_orders(adapter))
+
+        # order_task = asyncio.create_task(place_orders(adapter))
 
         self.logger.info(f"Waiting for ready signal...")
         await self._wait_for_confirmation()

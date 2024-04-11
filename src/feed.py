@@ -53,9 +53,10 @@ class Feed:
         self._active_orders = {}
         self._executions = deque(maxlen=100)
 
-        self._order_books = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=(float, (2 * max_depth, 2)))
-                             for contract in self.contracts}
-        self._trades = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=(float, 4))
+        order_book_dtype = [('timestamp', 'datetime64[ms]'), ('data', (float, (2 * max_depth, 2)))]
+        self._order_books = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=order_book_dtype)
+                                    for contract in self.contracts}
+        self._trades = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=(float, 7))
                         for contract in self.contracts}
         self._klines = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=(float, 6))
                         for contract in self.contracts}
@@ -157,6 +158,42 @@ class Feed:
             trade_array = (float(trade['timestamp']), side, float(trade['price']), float(trade['qty']))
             self._trades[symbol].append(trade_array)
        
+        await self.enqueue_symbol_update(symbol)
+
+    async def add_trades_custom(self, trades: List[Dict]) -> None:
+
+        symbol = trades[0]['symbol']
+        timestamp = float(trades[0]['timestamp'])
+
+        # Initialize aggregation variables
+        buy_count, buy_qty_sum, buy_price_qty_sum = 0, 0, 0
+        sell_count, sell_qty_sum, sell_price_qty_sum = 0, 0, 0
+
+        # Aggregate trades
+        for trade in trades:
+            side = trade['side']
+            qty = float(trade['qty'])
+            price = float(trade['price'])
+
+            if side == 1:
+                buy_count += 1
+                buy_qty_sum += qty
+                buy_price_qty_sum += price * qty
+            else:
+                sell_count += 1
+                sell_qty_sum += qty
+                sell_price_qty_sum += price * qty
+
+        # Calculate average prices
+        avg_buy_price = buy_price_qty_sum / buy_qty_sum if buy_count > 0 else 0
+        avg_sell_price = sell_price_qty_sum / sell_qty_sum if sell_count > 0 else 0
+
+        # Create the aggregated trade summary
+        aggregated_trade_data = (timestamp, buy_count, avg_buy_price, buy_qty_sum, sell_count, avg_sell_price, sell_qty_sum)
+
+        # Append to the ring buffer
+        self._trades[symbol].append(aggregated_trade_data)
+
         await self.enqueue_symbol_update(symbol)
 
     async def add_kline(self, symbol: str, kline: NDArray) -> None:

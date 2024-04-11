@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import numpy as np
-import datetime as dt
 
 from src.feed import Feed, InventoryField
 from src.zeromq.zeromq import SubscriberSocket
@@ -159,7 +158,8 @@ class Order_Book:
 
     async def update_book(self, update: Dict[str, List[Any]]) -> None:
         symbol = update['symbol']
-        _timestamp = update['timestamp']
+        timestamp = update['timestamp']
+        timestamp_utc = np.datetime64(int(timestamp), 'ms').astype('datetime64[ms]')
         bids = update.get('bids', [])
         asks = update.get('asks', [])
 
@@ -171,7 +171,8 @@ class Order_Book:
                                                                      )[:self.feed.max_depth]], dtype=float)
 
         snapshot = np.vstack((bids_array, asks_array))
-        await self.feed.add_orderbook_snapshot(symbol, snapshot)
+        snapshot_with_timestamp = np.array((timestamp_utc, snapshot), dtype=self.feed._order_books[symbol].dtype)
+        await self.feed.add_orderbook_snapshot(symbol, snapshot_with_timestamp)
 
 
 class Trades:
@@ -180,7 +181,7 @@ class Trades:
 
     async def update_trades(self, update: List[Dict]) -> None:
 
-        await self.feed.add_trades(update)
+        await self.feed.add_trades_custom(update)
 
 
 class Klines:

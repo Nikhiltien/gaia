@@ -25,7 +25,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         self.headers = {"Content-Type": "application/json"}
         self.base_url = 'https://api.hyperliquid.xyz'
 
-        self.book_depth = None
+        self._book_depth = None
 
         self.address = None
         self.info = None
@@ -393,7 +393,17 @@ class HyperLiquid(WebsocketClient, Adapter):
             }
         await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
-    async def subscribe_trades(self, contract, req_id=None):
+    async def subscribe_all_symbol(self, contracts: List):
+        tasks = []
+
+        for contract in contracts:
+            tasks.append(asyncio.create_task(self.subscribe_order_book(contract)))
+            tasks.append(asyncio.create_task(self.subscribe_trades(contract)))
+            tasks.append(asyncio.create_task(self.subscribe_klines(contract)))
+
+        await asyncio.gather(*tasks)
+
+    async def subscribe_trades(self, contract: Dict, req_id=None):
         symbol = contract.get("symbol")
         params = {
             "type": "trades",
@@ -402,7 +412,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         return await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
     async def subscribe_order_book(self, contract, num_levels=None, req_id=None):
-        self.book_depth = num_levels
+        self._book_depth = num_levels
         symbol = contract.get("symbol")
         params = {
             "type": "l2Book",
@@ -419,7 +429,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         )
         return response
 
-    async def subscribe_klines(self, contract, interval, req_id=None):
+    async def subscribe_klines(self, contract, interval="1m", req_id=None):
         symbol = contract.get("symbol")
         params = {
             "type": "candle",
@@ -532,8 +542,8 @@ class HyperLiquid(WebsocketClient, Adapter):
             bids, asks = book
             
             # Limit the number of levels if num_levels is specified; otherwise, use all levels
-            bids = bids[:self.book_depth] if self.book_depth is not None else bids
-            asks = asks[:self.book_depth] if self.book_depth is not None else asks
+            bids = bids[:self._book_depth] if self._book_depth is not None else bids
+            asks = asks[:self._book_depth] if self._book_depth is not None else asks
 
             parsed_book = {
                 "symbol": data.get("data", {}).get("coin"),

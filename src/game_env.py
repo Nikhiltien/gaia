@@ -5,7 +5,7 @@ import numpy as np
 import gymnasium as gym
 
 # from src.models.tet.tet import Tet
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Tuple
 from numpy.typing import NDArray
 from numpy_ringbuffer import RingBuffer
@@ -15,7 +15,7 @@ from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
 MAX_STEPS = 25
-SEQUENCE_LENGTH = 10
+SEQUENCE_LENGTH = 3
 
 
 class GameEnv(gym.Env):
@@ -76,14 +76,15 @@ class GameEnv(gym.Env):
                 # Log the lengths.
                 for data_type, length in all_lengths.items():
                     if length < SEQUENCE_LENGTH:
-                        print(f"{data_type} length {length} is below the required SEQUENCE_LENGTH {SEQUENCE_LENGTH}.")
+                        self.logger.debug(f"{data_type} length {length} is below the required SEQUENCE_LENGTH {SEQUENCE_LENGTH}.")
 
                 # Check if all data types across all symbols have sufficient data.
                 if all(length >= SEQUENCE_LENGTH for length in all_lengths.values()):
                     self.ready = True
                     self.logger.info("GameEnv is ready!")
                 else:
-                    await asyncio.sleep(15)  # Wait and then check again.
+                    print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
+                    await asyncio.sleep(30)  # Wait and then check again.
                     continue
             
             # Process updates only when data is ready.
@@ -168,29 +169,76 @@ class GameEnv(gym.Env):
         balance = self.get_balance()
         return np.array([balance], dtype=float)
 
+    def align_trade_data(self, order_book_data: np.ndarray, trade_data: np.ndarray) -> np.ndarray:
+        # Extract and convert order book timestamps to datetime64 for comparison
+        order_book_timestamps = np.array([np.datetime64(entry['timestamp']) for entry in order_book_data], dtype='datetime64[ms]')
+        
+        # Prepare for data alignment
+        expanded_trade_data = []
+        trade_timestamps = trade_data[:, 0].astype('datetime64[ms]')
+        
+        # Align trade data with order book timestamps
+        for ob_timestamp in order_book_timestamps:
+            idx = np.where(trade_timestamps == ob_timestamp)[0]
+            
+            if idx.size == 0:  # If no matching timestamp found, insert zero data row
+                zero_data_row = np.zeros(trade_data.shape[1])
+                zero_data_row[0] = ob_timestamp.astype('float64')  # Keep timestamp
+                expanded_trade_data.append(zero_data_row)
+        
+        # Combine and sort the trade data if expanded data exists
+        if expanded_trade_data:
+            expanded_trade_data_array = np.array(expanded_trade_data)
+            final_trades = np.vstack((trade_data, expanded_trade_data_array))
+            final_trades = final_trades[np.argsort(final_trades[:, 0])]  # Sort by timestamp
+        else:
+            final_trades = trade_data
+        
+        # Print the full array without truncation
+        np.set_printoptions(suppress=True, precision=3, threshold=np.inf, linewidth=200)
+        print("Final aligned and sorted trade data:")
+        print(final_trades)
+        
+        return final_trades
+
     def process_symbol_data(self, update_symbol: str):
         """Processes the data for a given symbol."""
-
-        order_book_data = self._get_snapshot(self.feed.order_books[update_symbol])
+        order_book_data = self._get_data_sequence(self.feed.order_books[update_symbol])
         trade_data = self._get_data_sequence(self.feed.trades[update_symbol])
-        kline_data = self._get_data_sequence(self.feed.klines[update_symbol])
 
-        return self.process_data_with_model(order_book_data, trade_data, kline_data)
+        # Align the trade data with the order book data timestamps.
+        aligned_trade_data = self.align_trade_data(order_book_data, trade_data)
+        # print(aligned_trade_data)
+
+        # # Convert the last order book timestamp to a readable UTC format.
+        # ob_last_timestamp = datetime.fromtimestamp(order_book_data[-1][0].astype('O') / 1e3, tz=timezone.utc)
+        # print(f"Last Order Book Timestamp in UTC: {ob_last_timestamp}")
+
+        # # For each entry in aligned trade data, convert the timestamp to a readable UTC format and print.
+        # print("Aligned Trade Data Timestamps in UTC:")
+        # for row in aligned_trade_data:
+        #     trade_timestamp = datetime.fromtimestamp(row[0] / 1e3, tz=timezone.utc)
+        #     print(f"Trade Timestamp in UTC: {trade_timestamp}")
+
+        return order_book_data[-SEQUENCE_LENGTH:], aligned_trade_data
 
     def process_data_with_model(self, order_book_data: np.ndarray, trade_data: np.ndarray, kline_data: np.ndarray) -> np.ndarray:
         """Placeholder function to simulate data processing with ML model."""
-        trades_imbalance = math.trades_imbalance(trades=trade_data , window=SEQUENCE_LENGTH)
 
-        best_bid_price, best_bid_volume = order_book_data[9, 0], order_book_data[9, 1]
-        best_ask_price, best_ask_volume = order_book_data[-10, 0], order_book_data[-10, 1]
+        # sync_data = self.synchronize_data(trade_data, order_book_data)
+        # print(order_book_data[-1])
+        # print(trade_data[-1])
+        # print(sync_data)
+        # best_bid_price, best_bid_volume = order_book_data[9, 0], order_book_data[9, 1]
+        # best_ask_price, best_ask_volume = order_book_data[-10, 0], order_book_data[-10, 1]
         
-        bba = np.array([[best_bid_price, best_bid_volume], [best_ask_price, best_ask_volume]])
+        # bba = np.array([[best_bid_price, best_bid_volume], [best_ask_price, best_ask_volume]])
 
-        weighted_mid_price = math.get_wmid(bba)
-        print(trade_data)
-        print(trades_imbalance)
+        # trades_imbalance = math.trades_imbalance(trades=trade_data , window=SEQUENCE_LENGTH)
+        # weighted_mid_price = math.get_wmid(bba)
+        # print(trades_imbalance)
 
-        return np.concatenate((order_book_data.flatten(), trade_data.flatten(), kline_data.flatten()))
+        return np.concatenate((order_book_data[-1][1].flatten(), trade_data.flatten(), kline_data.flatten()))
 
     def calculate_pnl_1h(self):
         now = datetime.now()
