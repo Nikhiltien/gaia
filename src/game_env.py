@@ -15,7 +15,7 @@ from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
 MAX_STEPS = 25
-SEQUENCE_LENGTH = 3
+SEQUENCE_LENGTH = 10
 
 
 class GameEnv(gym.Env):
@@ -67,7 +67,7 @@ class GameEnv(gym.Env):
 
                     all_lengths[f'{symbol}_order_books'] = order_books_length
                     all_lengths[f'{symbol}_trades'] = trades_length
-                    all_lengths[f'{symbol}_klines'] = klines_length
+                    # all_lengths[f'{symbol}_klines'] = klines_length
 
                 # Also check the length of balances.
                 balances_length = len(self.feed.balances._unwrap())
@@ -76,14 +76,14 @@ class GameEnv(gym.Env):
                 # Log the lengths.
                 for data_type, length in all_lengths.items():
                     if length < SEQUENCE_LENGTH:
-                        self.logger.debug(f"{data_type} length {length} is below the required SEQUENCE_LENGTH {SEQUENCE_LENGTH}.")
+                        self.logger.info(f"{data_type} length {length} is below the required SEQUENCE_LENGTH {SEQUENCE_LENGTH}.")
 
                 # Check if all data types across all symbols have sufficient data.
                 if all(length >= SEQUENCE_LENGTH for length in all_lengths.values()):
                     self.ready = True
                     self.logger.info("GameEnv is ready!")
                 else:
-                    print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
+                    # print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
                     await asyncio.sleep(30)  # Wait and then check again.
                     continue
             
@@ -176,12 +176,16 @@ class GameEnv(gym.Env):
         # Prepare for data alignment
         expanded_trade_data = []
         trade_timestamps = trade_data[:, 0].astype('datetime64[ms]')
+
+        print(f"Order book timestamps: {order_book_timestamps}")
+        print(f"Trade timestamps: {trade_timestamps}")
         
         # Align trade data with order book timestamps
         for ob_timestamp in order_book_timestamps:
             idx = np.where(trade_timestamps == ob_timestamp)[0]
             
             if idx.size == 0:  # If no matching timestamp found, insert zero data row
+                self.logger.info('Found misaligned timestamp.')
                 zero_data_row = np.zeros(trade_data.shape[1])
                 zero_data_row[0] = ob_timestamp.astype('float64')  # Keep timestamp
                 expanded_trade_data.append(zero_data_row)

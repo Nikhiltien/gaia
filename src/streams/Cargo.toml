@@ -6,3 +6,37 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+abomonation = "0.7.3"
+abomonation_derive = "0.5"
+timely = { version = "0.12.0", features = ["bincode"] }
+differential-dataflow = "0.12"
+zmq = "0.9"
+statrs = "0.16.0"
+redis = { version = "0.25.0", features = ["aio", "tokio-comp"] }
+rustis = { version = "0.12.8", features = ["redis-time-series"] }
+r2d2 = "0.8.10"
+r2d2_redis = "0.14.0"
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "*"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "*"
+serde_json = "*"
+anyhow = "1.0"
+crossbeam-channel = "0.5.11"
+criterion = "0.5.1"
+crc32fast = "1.2"
+log = "0.4"
+env_logger = "0.9"
+hex = "0.4"
+chrono = "0.4.33"
+bincode = "*"
+sha2 = "*"
+rand = "*"
+dasp_ring_buffer = "*"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[[bench]]
+name = "ring_bench"
+harness = false

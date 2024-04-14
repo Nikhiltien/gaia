@@ -1,0 +1,22 @@
+- port: "50000"
+  name: "KRAKEN"
+  socket_type: "SUB"
+  event_type: "connect"
+  topics: ["trades", "order_book", "orders", "inventory"]
+
+- port: "50001"
+  name: "HYPERLIQUID"
+  socket_type: "SUB"
+  event_type: "connect"
+  topics: ["trades", "order_book", "orders", "inventory"]
+
+- port: "50002"
+  name: "IBKR"
+  socket_type: "SUB"
+  event_type: "connect"
+  topics: ["trades", "order_book", "orders", "inventory"]
+
+- port: "50003"
+  name: "GAIA"
+  socket_type: "PUB"
+  event_type: "bind"

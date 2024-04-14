@@ -568,8 +568,8 @@ class HyperLiquid(WebsocketClient, Adapter):
                 "side": 1 if trade['side'] == 'B' else 0,
                 "price": float(trade["px"]),
                 "qty": float(trade["sz"]),
-                "timestamp": float(trade["time"]),
-                "hash": trade["hash"],
+                "timestamp": int(trade["time"]),
+                # "hash": trade["hash"],
                 "trade_id": trade["tid"]
             })
 
