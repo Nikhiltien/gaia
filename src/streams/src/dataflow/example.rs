@@ -1,87 +1,108 @@
-use crate::structs::{BatchTrades, Klines, Order, OrderBookData, TradeData};
-use crossbeam_channel::Receiver;
+use crate::structs::{BatchTrades, TradeData};
+use crossbeam_channel::{Receiver, TryRecvError};
+use futures_util::stream::{self, StreamExt};
 use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 use timely::dataflow::channels::pact::Pipeline;
-use timely::dataflow::operators::generic::operator::Operator;
-use timely::dataflow::operators::generic::source;
-use timely::dataflow::operators::probe::Handle as ProbeHandle;
-use timely::dataflow::operators::Capability;
-use timely::dataflow::operators::Probe;
-use timely::dataflow::operators::{Inspect, Map, ToStream};
+use timely::dataflow::channels::Message;
+use timely::dataflow::operators::generic::operator::source;
+use timely::dataflow::operators::{CapabilitySet, Inspect, Operator, ToStream};
 use timely::dataflow::{Scope, Stream};
+use timely::progress::Timestamp;
 use timely::scheduling::Scheduler;
+use timely::Data;
 
-pub fn run_timely_dataflow(receiver: Receiver<TradeData>) {
-    timely::execute_from_args(std::env::args(), move |worker| {
-        let receiver = receiver.clone();
-        let mut probe = ProbeHandle::new();
+/// Define a custom Event type for asynchronous streams
+pub enum Event<T, D> {
+    Progress(T),
+    Message(T, D),
+}
 
-        worker.dataflow::<u64, _, _>(move |scope| {
-            let stream = source(scope, "Trades", move |capability, _info| {
-                let mut cap = Some(capability);
-                move |output| {
-                    let mut capabilities = HashMap::new();
+/// Trait to convert an async stream of Events to a Timely Stream
+pub trait ToStreamAsync<T, D>
+where
+    T: Timestamp,
+    D: Send + 'static,
+{
+    fn to_stream<S: Scope<Timestamp = T>>(self, scope: &S) -> Stream<S, D>;
+}
 
-                    if let Some(initial_cap) = cap.take() {
-                        while let Ok(data) = receiver.recv() {
-                            let time = data.timestamp; // Assuming timestamp is in milliseconds
+impl<T, D, I> ToStreamAsync<T, D> for I
+where
+    T: Timestamp + Copy,
+    D: Data + Send + 'static + Clone,
+    I: futures_util::stream::Stream<Item = Event<T, D>> + Unpin + 'static,
+{
+    fn to_stream<S: Scope<Timestamp = T>>(mut self, scope: &S) -> Stream<S, D> {
+        source(scope, "ToStreamAsync", move |capability, info| {
+            let activator = Arc::new(scope.sync_activator_for(&info.address[..]));
+            let mut cap_set = CapabilitySet::from_elem(capability);
 
-                            // Ensure that we get a mutable reference to a delayed capability
-                            let cap = capabilities
-                                .entry(time)
-                                .or_insert_with(|| initial_cap.delayed(&time));
+            move |output| {
+                let waker = futures_util::task::waker_ref(&activator);
+                let mut context = Context::from_waker(&waker);
 
-                            // Clone data to use inside the session
-                            output.session(cap).give(data.clone());
+                while let Poll::Ready(option) = Pin::new(&mut self).poll_next(&mut context) {
+                    match option {
+                        Some(Event::Progress(time)) => {
+                            cap_set.downgrade(&[time]); // Update the capability frontier
                         }
-
-                        // Compute new time for downgrading by finding the maximum key (time) in the hash map
-                        if let Some(&max_time) = capabilities.keys().max() {
-                            let new_time = max_time + 1; // Advance logical time
-
-                            // Iterate over mutable references to each capability
-                            for (&time, cap) in capabilities.iter_mut() {
-                                if time < new_time {
-                                    cap.downgrade(&new_time);
-                                }
+                        Some(Event::Message(time, data)) => {
+                            let new_capability = cap_set.delayed(&time);
+                            if let cap = new_capability {
+                                output.session(&cap).give(data);
+                            } else {
+                                println!(
+                                    "Warning: Attempted to delay to an invalid time: {:?}",
+                                    time
+                                );
                             }
-
-                            // Retain only the capabilities for times >= new_time
-                            capabilities.retain(|&k, _| k >= new_time);
                         }
+
+                        None => break, // End of stream
                     }
                 }
-            });
+            }
+        })
+    }
+}
 
-            stream
-                .unary_frontier(Pipeline, "AggregateTrades", move |_capability, _info| {
-                    let mut cap = None;
-                    let mut trade_buffer = HashMap::new();
+pub fn run_timely_dataflow(receiver: Receiver<Vec<TradeData>>) {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
 
-                    move |input, output| {
-                        input.for_each(|temp_cap, data| {
-                            cap = Some(temp_cap.delayed(&temp_cap.time()));
-                            data.swap(
-                                &mut trade_buffer
-                                    .entry(*temp_cap.time())
-                                    .or_insert_with(Vec::new),
-                            );
-                        });
-
-                        if let Some(ref cap) = cap {
-                            for (&timestamp, trades) in trade_buffer.iter() {
-                                let batch_trades = aggregate_trades(trades, timestamp);
-                                output.session(cap).give(batch_trades); // Give the aggregated batch to the output
+    timely::execute_from_args(std::env::args(), move |worker| {
+        let receiver = receiver.clone();
+        worker.dataflow::<u64, _, _>(|scope| {
+            let activator = scope.activator_for(&scope.addr());
+            source(scope, "Trades", move |capability, _info| {
+                let mut capability = capability;
+                move |output| {
+                    match receiver.try_recv() {
+                        Ok(batch) => {
+                            println!("batch: {:?}", batch);
+                            // Handle capability delay correctly
+                            if let c = capability.delayed(&batch.first().map_or(0, |trade| trade.timestamp)) {
+                                output.session(&c).give_iterator(batch.iter().cloned());
+                                capability = c; // Update the current capability to the delayed one
+                            } else {
+                                // Log error when capability cannot be delayed
+                                println!("Warning: Failed to delay capability to the timestamp of the first trade.");
                             }
-                            trade_buffer.clear();
                         }
+                        Err(TryRecvError::Empty) => {
+                            // Use the previously created activator
+                            activator.activate(); // Reactivate the operator later
+                        }
+                        Err(TryRecvError::Disconnected) => return, // Stop the dataflow if the channel is disconnected
                     }
-                })
-                .inspect(|batch_trade| {
-                    println!("Aggregated Trade: {:?}", batch_trade); // This is the new line you add for printing
-                })
-                .probe_with(&mut probe);
-        });
+                }
+            })
+            .inspect(|data| {
+                println!("Processed: {:?}", data);
+            });
+        })
     })
     .unwrap();
 }

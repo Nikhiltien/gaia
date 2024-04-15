@@ -33,7 +33,16 @@ class GameEnv(gym.Env):
         self.max_depth = max_depth
         self.max_drawdown = max_drawdown
 
-        self.state = {}
+        ## Ring buffer holding the environment's states. Each element in the buffer is a tuple structured as follows:
+        ##     - orders (array): Current active orders array.
+        ##     - inventory (array): Current positions or inventory array.
+        ##     - balance (float): Current balance or account equity.
+        ##     - symbol_data (list of tuples): Data related to each symbol being traded, structured for each symbol as:
+        ##         - order_book (array): Latest snapshot of the order book data.
+        ##        - trades (array): Most recent trade data.
+        ##         - klines (array): Latest candlestick (klines) data.
+
+        self.state = RingBuffer(capacity=SEQUENCE_LENGTH, dtype=object)
         self.ready = False
 
         self.step = 0
@@ -84,26 +93,14 @@ class GameEnv(gym.Env):
                     self.logger.info("GameEnv is ready!")
                 else:
                     # print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
-                    await asyncio.sleep(30)  # Wait and then check again.
+                    await asyncio.sleep(20)  # Wait and then check again.
                     continue
             
             # Process updates only when data is ready.
             update_symbol = await self.feed.peek_symbol_update()
 
-            if update_symbol == "Orders":
-                orders_data = self.get_active_orders_array()
-                # self.logger.info(f"Orders Array: {orders_data.shape}")
-            elif update_symbol == "Inventory":
-                inventory_data = self.get_inventory_array()
-                # self.logger.info(f"Inventory Array: {inventory_data.shape}")
-            elif update_symbol == "Balance":
-                balance_data = self.get_balance_array()
-                # self.logger.info(f"Balances Array: {balance_data.shape}")
-            else:
-                symbol_data = self.process_symbol_data(update_symbol)
-                # self.logger.info(f"Symbol Array: {symbol_data.shape}")
-
-            # self.logger.info(f"Acknowledged update for: {update_symbol}")
+            if update_symbol:
+                await self._process_update()
             self.feed.dequeue_symbol_update(update_symbol)
 
     def get_status(self):
@@ -132,6 +129,21 @@ class GameEnv(gym.Env):
         # for contract in self.feed.contracts:
         #      print(f"{contract['symbol']}: {self.get_orders_for_symbol(contract['symbol'])}")
         # print(self.get_orders_for_symbol(symbol for contract['symbol'] in self.feed.contracts))
+
+    async def _process_update(self):
+        orders_data = self.get_active_orders_array()
+        inventory_data = self.get_inventory_array()
+        balance_data = self.get_balance_array()
+
+        timestep_data = []
+        for contract in self.feed.contracts:
+            symbol_data = self._process_symbol_data(contract['symbol'])
+            timestep_data.append(symbol_data)
+
+        self.state.append((orders_data, inventory_data, balance_data, symbol_data))
+
+    def _get_last(self, data: RingBuffer) -> np.ndarray:
+        return data._unwrap()[-1]
 
     def _get_data_sequence(self, data: RingBuffer) -> np.ndarray:
         """Extract the last SEQUENCE_LENGTH records from the data."""
@@ -169,62 +181,23 @@ class GameEnv(gym.Env):
         balance = self.get_balance()
         return np.array([balance], dtype=float)
 
-    def align_trade_data(self, order_book_data: np.ndarray, trade_data: np.ndarray) -> np.ndarray:
-        # Extract and convert order book timestamps to datetime64 for comparison
-        order_book_timestamps = np.array([np.datetime64(entry['timestamp']) for entry in order_book_data], dtype='datetime64[ms]')
-        
-        # Prepare for data alignment
-        expanded_trade_data = []
-        trade_timestamps = trade_data[:, 0].astype('datetime64[ms]')
-
-        print(f"Order book timestamps: {order_book_timestamps}")
-        print(f"Trade timestamps: {trade_timestamps}")
-        
-        # Align trade data with order book timestamps
-        for ob_timestamp in order_book_timestamps:
-            idx = np.where(trade_timestamps == ob_timestamp)[0]
-            
-            if idx.size == 0:  # If no matching timestamp found, insert zero data row
-                self.logger.info('Found misaligned timestamp.')
-                zero_data_row = np.zeros(trade_data.shape[1])
-                zero_data_row[0] = ob_timestamp.astype('float64')  # Keep timestamp
-                expanded_trade_data.append(zero_data_row)
-        
-        # Combine and sort the trade data if expanded data exists
-        if expanded_trade_data:
-            expanded_trade_data_array = np.array(expanded_trade_data)
-            final_trades = np.vstack((trade_data, expanded_trade_data_array))
-            final_trades = final_trades[np.argsort(final_trades[:, 0])]  # Sort by timestamp
-        else:
-            final_trades = trade_data
-        
-        # Print the full array without truncation
-        np.set_printoptions(suppress=True, precision=3, threshold=np.inf, linewidth=200)
-        print("Final aligned and sorted trade data:")
-        print(final_trades)
-        
-        return final_trades
-
-    def process_symbol_data(self, update_symbol: str):
+    def _process_symbol_data(self, symbol: str):
         """Processes the data for a given symbol."""
-        order_book_data = self._get_data_sequence(self.feed.order_books[update_symbol])
-        trade_data = self._get_data_sequence(self.feed.trades[update_symbol])
-
-        # Align the trade data with the order book data timestamps.
-        aligned_trade_data = self.align_trade_data(order_book_data, trade_data)
-        # print(aligned_trade_data)
-
-        # # Convert the last order book timestamp to a readable UTC format.
-        # ob_last_timestamp = datetime.fromtimestamp(order_book_data[-1][0].astype('O') / 1e3, tz=timezone.utc)
-        # print(f"Last Order Book Timestamp in UTC: {ob_last_timestamp}")
-
-        # # For each entry in aligned trade data, convert the timestamp to a readable UTC format and print.
-        # print("Aligned Trade Data Timestamps in UTC:")
-        # for row in aligned_trade_data:
-        #     trade_timestamp = datetime.fromtimestamp(row[0] / 1e3, tz=timezone.utc)
-        #     print(f"Trade Timestamp in UTC: {trade_timestamp}")
-
-        return order_book_data[-SEQUENCE_LENGTH:], aligned_trade_data
+        # Get the most recent data from order books and trades
+        order_book_data = self._get_last(self.feed.order_books[symbol])
+        trade_data = self._get_last(self.feed.trades[symbol])
+        klines_data = self._get_last(self.feed.klines[symbol])
+        
+        # Align timestamps by selecting the latest one
+        # latest_timestamp = max(order_book_timestamp, trade_timestamp)
+        
+        # Check if trade data is stale
+        if trade_data[0] < order_book_data[0]:
+            # Use zeros for trade data if stale (preserve the number of columns in trade data)
+            trade_data = np.zeros_like(trade_data)
+            trade_data[0] = order_book_data[0]
+        
+        return (order_book_data[1], trade_data, klines_data)
 
     def process_data_with_model(self, order_book_data: np.ndarray, trade_data: np.ndarray, kline_data: np.ndarray) -> np.ndarray:
         """Placeholder function to simulate data processing with ML model."""
@@ -332,6 +305,42 @@ class GameEnv(gym.Env):
         order_array = np.array(filtered_orders, dtype=float)
         
         return order_array
+    
+    def _align_trade_data(self, order_book_data: np.ndarray, trade_data: np.ndarray) -> np.ndarray:
+        # Extract and convert order book timestamps to datetime64 for comparison
+        order_book_timestamps = np.array([np.datetime64(entry['timestamp']) for entry in order_book_data], dtype='datetime64[ms]')
+        
+        # Prepare for data alignment
+        expanded_trade_data = []
+        trade_timestamps = trade_data[:, 0].astype('datetime64[ms]')
+
+        print(f"Order book timestamps: {order_book_timestamps}")
+        print(f"Trade timestamps: {trade_timestamps}")
+        
+        # Align trade data with order book timestamps
+        for ob_timestamp in order_book_timestamps:
+            idx = np.where(trade_timestamps == ob_timestamp)[0]
+            
+            if idx.size == 0:  # If no matching timestamp found, insert zero data row
+                self.logger.info('Found misaligned timestamp.')
+                zero_data_row = np.zeros(trade_data.shape[1])
+                zero_data_row[0] = ob_timestamp.astype('float64')  # Keep timestamp
+                expanded_trade_data.append(zero_data_row)
+        
+        # Combine and sort the trade data if expanded data exists
+        if expanded_trade_data:
+            expanded_trade_data_array = np.array(expanded_trade_data)
+            final_trades = np.vstack((trade_data, expanded_trade_data_array))
+            final_trades = final_trades[np.argsort(final_trades[:, 0])]  # Sort by timestamp
+        else:
+            final_trades = trade_data
+        
+        # Print the full array without truncation
+        np.set_printoptions(suppress=True, precision=3, threshold=np.inf, linewidth=200)
+        print("Final aligned and sorted trade data:")
+        print(final_trades)
+        
+        return final_trades
 
     def step(self):
         pass

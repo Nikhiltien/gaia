@@ -28,6 +28,8 @@ pub struct BatchTrades {
     pub total_sells_qty: f64,
 }
 
+const MAX_DEPTH: usize = 50;
+
 #[derive(Debug, Serialize, Deserialize, Abomonation, Clone)]
 pub struct OrderBookData {
     #[serde(skip_serializing_if = "Option::is_none")]

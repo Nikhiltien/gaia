@@ -158,8 +158,7 @@ class Order_Book:
 
     async def update_book(self, update: Dict[str, List[Any]]) -> None:
         symbol = update['symbol']
-        timestamp = update['timestamp']
-        timestamp_utc = np.datetime64(int(timestamp), 'ms').astype('datetime64[ms]')
+        timestamp = int(update['timestamp'])
         bids = update.get('bids', [])
         asks = update.get('asks', [])
 
@@ -171,7 +170,7 @@ class Order_Book:
                                                                      )[:self.feed.max_depth]], dtype=float)
 
         snapshot = np.vstack((bids_array, asks_array))
-        snapshot_with_timestamp = np.array((timestamp_utc, snapshot), dtype=self.feed._order_books[symbol].dtype)
+        snapshot_with_timestamp = np.array((timestamp, snapshot), dtype=self.feed._order_books[symbol].dtype)
         await self.feed.add_orderbook_snapshot(symbol, snapshot_with_timestamp)
 
 

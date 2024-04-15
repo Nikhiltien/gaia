@@ -39,7 +39,7 @@ async fn main() {
     let mut zmq_manager = ZmqSocketManager::new();
     zmq_manager.start_subscribers();
 
-    let (t_sender, t_receiver) = unbounded::<TradeData>();
+    let (t_sender, t_receiver) = unbounded::<Vec<TradeData>>();
     // let (ob_sender, ob_receiver) = unbounded::<OrderBookData>();
     // let (k_sender, k_receiver) = unbounded::<Klines>();
     // let (ord_sender, ord_receiver) = unbounded::<Order>();
@@ -66,23 +66,23 @@ async fn process_message_from_subscriber(
     exchange: &str,
     topic: &str,
     message_bytes: &[u8],
-    sender: &Sender<TradeData>,
+    sender: &Sender<Vec<TradeData>>,
 ) {
     match topic {
         "trades" => {
-            let trade_data_result = from_slice::<Vec<TradeData>>(message_bytes)
-                .or_else(|_| from_slice::<TradeData>(message_bytes).map(|td| vec![td])); // Handle both single and Vec<TradeData>
+            let trades = from_slice::<Vec<TradeData>>(message_bytes)
+                .or_else(|_| from_slice::<TradeData>(message_bytes).map(|td| vec![td])); // This handles both lists and single trades
 
-            if let Ok(trades) = trade_data_result {
-                for mut trade_data in trades {
-                    trade_data.exchange = Some(exchange.to_string());
-                    // println!("Trade: {:?}", trade_data);
-                    if let Err(e) = sender.send(trade_data) {
+            match trades {
+                Ok(mut trade_list) => {
+                    for trade in trade_list.iter_mut() {
+                        trade.exchange = Some(exchange.to_string());
+                    }
+                    if let Err(e) = sender.send(trade_list) {
                         error!("Failed to send trade data: {}", e);
                     }
                 }
-            } else {
-                error!("Invalid trade data format for trades topic.");
+                Err(_) => error!("Invalid trade data format for trades topic."),
             }
         }
         "order_book" => {

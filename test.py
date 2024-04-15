@@ -31,6 +31,7 @@ async def main():
 
     # await adapter.subscribe_all_symbol([{"symbol": "ETH"}])
     await adapter.subscribe_trades({"symbol": "ETH"})
+    await adapter.subscribe_order_book(contract={"symbol": "ETH"}, num_levels=10)
 
     await asyncio.sleep(300)
 

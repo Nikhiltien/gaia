@@ -53,7 +53,7 @@ class Feed:
         self._active_orders = {}
         self._executions = deque(maxlen=100)
 
-        order_book_dtype = [('timestamp', 'datetime64[ms]'), ('data', (float, (2 * max_depth, 2)))]
+        order_book_dtype = [('timestamp', np.int64), ('data', (float, (2 * max_depth, 2)))]
         self._order_books = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=order_book_dtype)
                                     for contract in self.contracts}
         self._trades = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=(float, 7))
@@ -194,7 +194,7 @@ class Feed:
         # Append to the ring buffer
         self._trades[symbol].append(aggregated_trade_data)
 
-        await self.enqueue_symbol_update(symbol)
+        # await self.enqueue_symbol_update(symbol)
 
     async def add_kline(self, symbol: str, kline: NDArray) -> None:
         unwrapped_data = self._klines[symbol]._unwrap()

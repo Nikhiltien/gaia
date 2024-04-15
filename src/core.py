@@ -21,7 +21,7 @@ from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
 order = {
     "symbol": "ETH",
     "side": "BUY",
-    "price": 4000.0,
+    "price": 3200.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -34,7 +34,7 @@ order = {
 order2 = {
     "symbol": "ETH",
     "side": "SELL",
-    "price": 3200.0,
+    "price": 2800.0,
     "qty": 0.01,
     "reduceOnly": False,
     "orderType": {
@@ -47,7 +47,7 @@ order2 = {
 order3 = {
     "symbol": "ETH",
     "side": "BUY",
-    "price": 3000.0,
+    "price": 2500.0,
     "qty": 0.005,
     "reduceOnly": False,
     "orderType": {
@@ -133,7 +133,7 @@ class GAIA:
 
         await adapter.subscribe_all_symbol(self.feed.contracts)
 
-        # order_task = asyncio.create_task(place_orders(adapter))
+        order_task = asyncio.create_task(place_orders(adapter))
 
         self.logger.info(f"Waiting for ready signal...")
         await self._wait_for_confirmation()
