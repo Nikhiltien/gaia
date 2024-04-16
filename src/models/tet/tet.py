@@ -61,9 +61,9 @@ class Agent:
             state = torch.tensor(state, dtype=torch.float32, device='cpu').unsqueeze(0)
             with torch.no_grad():
                 q_values = self.model(state)
-                action = q_values.max(1)[1].item()
+                action = q_values.argmax(dim=1).cpu().numpy()  # Ensure it returns array-like actions
         else:
-            action = random.randrange(self.model.fc3.out_features)
+            action = np.random.uniform(low=-1, high=1, size=self.model.fc3.out_features)  # Random actions
         return action
 
     def remember(self, state, action, reward, next_state, done):

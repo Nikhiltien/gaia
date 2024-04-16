@@ -139,7 +139,7 @@ class GAIA:
         try:
             model.load_state_dict(torch.load('models/tet/Tet.pth'))
         except FileNotFoundError:
-            print("No pre-trained model found, starting training from scratch.")
+            print("No previous model found, starting new model.")
         agent = Agent(model)
 
         self.logger.info(f"Waiting for ready signal...")

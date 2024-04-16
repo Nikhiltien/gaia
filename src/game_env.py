@@ -53,7 +53,7 @@ class GameEnv(gym.Env):
             high=np.concatenate([
                 np.zeros(max_depth),  # Bid price decrease % stops at 0
                 np.ones(max_depth),   # Ask price increase %
-                np.ones(max_depth),   # Bid quantities (as % of max possible)
+                np.zeros(max_depth),   # Bid quantities (as % of max possible)
                 np.ones(max_depth),   # Ask quantities (as % of max possible)
             ]),
             dtype=np.float32
@@ -108,18 +108,18 @@ class GameEnv(gym.Env):
         pass
 
     def close(self):
-        torch.save(self.agent.model.state_dict(), 'models/Tet.pth')
+        torch.save(self.agent.model.state_dict(), 'models/tet/Tet.pth')
         # TODO
         pass
 
     def calculate_reward(self):
         # Example reward function
         profit_loss = self.calculate_pnl_1h()
-        inventory_penalty = -abs(self.current_inventory) * self.inventory_penalty_rate  # Penalize large inventories
-        return profit_loss + inventory_penalty
+        # inventory_penalty = -abs(self.current_inventory) * self.inventory_penalty_rate  # Penalize large inventories
+        return profit_loss # + inventory_penalty
 
     def check_if_done(self):
-        pass
+        True
 
     def apply_action(self, action):
         # Decode the normalized actions to actual market orders
@@ -152,15 +152,18 @@ class GameEnv(gym.Env):
         balance = self.get_balance()
         max_qty = balance / (mid_price / self.default_leverage)
 
-        # Decode actions into bid and ask orders
-        bids_prices = mid_price * (1 + action[:self.max_depth])
-        asks_prices = mid_price * (1 + action[self.max_depth:2*self.max_depth])
-        bids_quantities = max_qty * action[2*self.max_depth:3*self.max_depth]
-        asks_quantities = max_qty * action[3*self.max_depth:]
+        bid_adjustments = -np.abs(action[:self.max_depth])  # Ensure negative adjustments
+        ask_adjustments = np.abs(action[self.max_depth:2*self.max_depth])  # Ensure positive adjustments
+
+        bids_prices = mid_price * (1 + bid_adjustments)
+        asks_prices = mid_price * (1 + ask_adjustments)
+        
+        bids_quantities = max_qty * np.abs(action[2*self.max_depth:3*self.max_depth])  # Ensure non-negative quantities
+        asks_quantities = max_qty * np.abs(action[3*self.max_depth:])  # Ensure non-negative quantities
 
         # Create tuples of (side, price, quantity)
-        bids = [('bid', p, q) for p, q in zip(bids_prices, bids_quantities)]
-        asks = [('ask', p, q) for p, q in zip(asks_prices, asks_quantities)]
+        bids = [('BUY', p, q) for p, q in zip(bids_prices, bids_quantities)]
+        asks = [('SELL', p, q) for p, q in zip(asks_prices, asks_quantities)]
 
         return bids, asks
 
