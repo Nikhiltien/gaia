@@ -24,17 +24,20 @@ class OMS():
         await self.router.listen(self._handle_message)
 
     async def _handle_message(self, topic: str, data: dict) -> None:
-        if topic == 'adjust_leverage':
-            await self.set_leverage(data)
+        if topic == 'orders':
+            await self.place_orders(data)
         elif topic == 'cancel_all':
             await self.cancel_all_orders()
         elif topic == 'cancel':
             await self.cancel_order(data)
+        elif topic == 'adjust_leverage':
+            await self.set_leverage(data)
 
     def exit(self):
         pass
 
     async def place_orders(self, new_orders: List[Tuple[str, float, float]]):
+        # TODO
         print(new_orders)
         pass
 

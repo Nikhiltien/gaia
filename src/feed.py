@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import numpy as np
 import datetime as dt
 
@@ -19,16 +18,6 @@ class InventoryField(Enum):
     AVERAGE_PRICE = 'avg_price'
     LEVERAGE = 'leverage'
     DELTA = 'delta'
-
-
-class ModelTrades(Enum):
-    TIMESTAMP = 0
-    BUY_COUNT = 1
-    AVG_PRICE_BUY = 2
-    SUM_QTY_BUY = 3
-    SELL_COUNT = 4
-    AVG_PRICE_SELL = 5
-    SUM_QTY_SELL = 6
 
 
 class Feed:
