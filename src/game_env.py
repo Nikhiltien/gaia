@@ -15,7 +15,7 @@ from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
 MAX_STEPS = 25
-SEQUENCE_LENGTH = 10
+SEQUENCE_LENGTH = 5
 
 
 class GameEnv(gym.Env):
@@ -55,7 +55,7 @@ class GameEnv(gym.Env):
         self.logger.info("Cancelling any active orders.")
         self.actions.cancel_all_orders()
 
-        asyncio.create_task(self.monitor_feed_updates())
+        asyncio.create_task(self._monitor_feed_updates())
 
         await asyncio.sleep(5)
 
@@ -63,7 +63,13 @@ class GameEnv(gym.Env):
             self.get_status()
             await asyncio.sleep(30)
 
-    async def monitor_feed_updates(self):
+    def step(self):
+        pass
+
+    def reset(self):
+        pass
+
+    async def _monitor_feed_updates(self):
         while True:
             if not self.ready:
                 all_lengths = {}
@@ -76,19 +82,13 @@ class GameEnv(gym.Env):
 
                     all_lengths[f'{symbol}_order_books'] = order_books_length
                     all_lengths[f'{symbol}_trades'] = trades_length
-                    # all_lengths[f'{symbol}_klines'] = klines_length
+                    all_lengths[f'{symbol}_klines'] = klines_length
 
-                # Also check the length of balances.
-                balances_length = len(self.feed.balances._unwrap())
-                all_lengths['balances'] = balances_length
-
-                # Log the lengths.
                 for data_type, length in all_lengths.items():
-                    if length < SEQUENCE_LENGTH:
-                        self.logger.info(f"{data_type} length {length} is below the required SEQUENCE_LENGTH {SEQUENCE_LENGTH}.")
+                    if length < 2:
+                        self.logger.info(f"{data_type} length {length} is below 2.")
 
-                # Check if all data types across all symbols have sufficient data.
-                if all(length >= SEQUENCE_LENGTH for length in all_lengths.values()):
+                if all(length >= 2 for length in all_lengths.values()):
                     self.ready = True
                     self.logger.info("GameEnv is ready!")
                 else:
@@ -140,7 +140,13 @@ class GameEnv(gym.Env):
             symbol_data = self._process_symbol_data(contract['symbol'])
             timestep_data.append(symbol_data)
 
-        self.state.append((orders_data, inventory_data, balance_data, symbol_data))
+        # if len(self.state) > 0 and self.state._unwrap()[-1][3][0][1][0] == timestep_data[0][1][0]:
+        #     self.state.pop
+        #     self.logger.warning("Overwriting data in state.")
+        self.state.append((orders_data, inventory_data, balance_data, timestep_data))
+
+        if len(self.state) >= SEQUENCE_LENGTH:
+            self.model_input()
 
     def _get_last(self, data: RingBuffer) -> np.ndarray:
         return data._unwrap()[-1]
@@ -199,23 +205,36 @@ class GameEnv(gym.Env):
         
         return (order_book_data[1], trade_data, klines_data)
 
-    def process_data_with_model(self, order_book_data: np.ndarray, trade_data: np.ndarray, kline_data: np.ndarray) -> np.ndarray:
-        """Placeholder function to simulate data processing with ML model."""
+    def model_input(self) -> np.ndarray:
+        buffer_data = self.state._unwrap()
+        # Initialize a list to store concatenated data for all timesteps
+        concatenated_datas = []
 
-        # sync_data = self.synchronize_data(trade_data, order_book_data)
-        # print(order_book_data[-1])
-        # print(trade_data[-1])
-        # print(sync_data)
-        # best_bid_price, best_bid_volume = order_book_data[9, 0], order_book_data[9, 1]
-        # best_ask_price, best_ask_volume = order_book_data[-10, 0], order_book_data[-10, 1]
-        
-        # bba = np.array([[best_bid_price, best_bid_volume], [best_ask_price, best_ask_volume]])
+        # Process each state snapshot in the buffer
+        for data in buffer_data:
+            # Unpack the tuple
+            orders, inventory, balance, timestep_data = data
 
-        # trades_imbalance = math.trades_imbalance(trades=trade_data , window=SEQUENCE_LENGTH)
-        # weighted_mid_price = math.get_wmid(bba)
-        # print(trades_imbalance)
+            # Flatten individual arrays
+            orders_flat = orders.flatten()
+            inventory_flat = inventory.flatten()
 
-        return np.concatenate((order_book_data[-1][1].flatten(), trade_data.flatten(), kline_data.flatten()))
+            # Process symbol-specific data - flatten each part (order_book, trades, klines)
+            symbol_datasets = []
+            for symbol_info in timestep_data:
+                for dataset in symbol_info:  # order_book, trades, klines
+                    symbol_datasets.append(dataset.flatten())
+            
+        #     # Combine all the flats arrays into one flat array for this timestep
+            full_flat_array = np.concatenate([orders_flat, inventory_flat, balance] + symbol_datasets)
+
+        #     # Append to list for all timesteps
+            concatenated_datas.append(full_flat_array)
+
+        # # Convert the list of all timestep data into a numpy 2D array (sequence x features)
+        all_timesteps_data = np.stack(concatenated_datas)
+
+        print(all_timesteps_data.shape)
 
     def calculate_pnl_1h(self):
         now = datetime.now()
@@ -289,7 +308,7 @@ class GameEnv(gym.Env):
     def get_orders_for_symbol(self, symbol: str) -> NDArray:
         # Filter active orders by symbol
         filtered_orders = [
-            [order["side"] == "BUY" and 1 or 0,
+             [1 if order["side"] == "BUY" else 0,
              order["price"],
              order["qty"],
              # order["timestamp"]
@@ -341,12 +360,6 @@ class GameEnv(gym.Env):
         print(final_trades)
         
         return final_trades
-
-    def step(self):
-        pass
-
-    def reset(self):
-        pass
 
 
 class GameActions(gym.Env):
