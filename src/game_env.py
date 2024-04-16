@@ -14,8 +14,9 @@ from src.feed import Feed
 from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
+MAX_ORDERS = 20
 MAX_STEPS = 25
-SEQUENCE_LENGTH = 5
+SEQUENCE_LENGTH = 50
 
 
 class GameEnv(gym.Env):
@@ -126,9 +127,6 @@ class GameEnv(gym.Env):
         )
 
         print(status_message)
-        # for contract in self.feed.contracts:
-        #      print(f"{contract['symbol']}: {self.get_orders_for_symbol(contract['symbol'])}")
-        # print(self.get_orders_for_symbol(symbol for contract['symbol'] in self.feed.contracts))
 
     async def _process_update(self):
         orders_data = self.get_active_orders_array()
@@ -174,13 +172,21 @@ class GameEnv(gym.Env):
         return np.array(inventory_data, dtype=float)
 
     def get_active_orders_array(self) -> np.ndarray:
-        """Consolidates active orders into a numpy array."""
-        # Flatten the order details across all symbols into a single array
-        orders_data = [
-            [order['side'] == 'BUY' and 1 or 0, order['price'], order['qty']]
-            for order in self.feed.active_orders.values()
-        ]
-        return np.array(orders_data, dtype=float) if orders_data else np.empty((0, 3))
+        """Consolidates and pads active orders into a numpy array with fixed dimensions."""
+        if self.feed.active_orders:  # Check if there are any active orders
+            orders_data = np.array([
+                [1 if order['side'] == "BUY" else 0, order['price'], order['qty']]
+                for order in self.feed.active_orders.values()
+            ], dtype=float)
+        else:
+            orders_data = np.empty((0, 3), dtype=float)  # Ensure correct shape even if no orders
+
+        # Pad the orders_data to ensure each array has the same length
+        padded_orders = np.zeros((MAX_ORDERS, 3), dtype=float)
+        actual_length = min(len(orders_data), MAX_ORDERS)
+        padded_orders[:actual_length, :] = orders_data[:actual_length]
+
+        return padded_orders
 
     def get_balance_array(self) -> np.ndarray:
         """Represents balance as a numpy array."""
@@ -193,10 +199,7 @@ class GameEnv(gym.Env):
         order_book_data = self._get_last(self.feed.order_books[symbol])
         trade_data = self._get_last(self.feed.trades[symbol])
         klines_data = self._get_last(self.feed.klines[symbol])
-        
-        # Align timestamps by selecting the latest one
-        # latest_timestamp = max(order_book_timestamp, trade_timestamp)
-        
+
         # Check if trade data is stale
         if trade_data[0] < order_book_data[0]:
             # Use zeros for trade data if stale (preserve the number of columns in trade data)
@@ -225,10 +228,10 @@ class GameEnv(gym.Env):
                 for dataset in symbol_info:  # order_book, trades, klines
                     symbol_datasets.append(dataset.flatten())
             
-        #     # Combine all the flats arrays into one flat array for this timestep
+            # Combine all the flats arrays into one flat array for this timestep
             full_flat_array = np.concatenate([orders_flat, inventory_flat, balance] + symbol_datasets)
 
-        #     # Append to list for all timesteps
+            # Append to list for all timesteps
             concatenated_datas.append(full_flat_array)
 
         # # Convert the list of all timestep data into a numpy 2D array (sequence x features)
