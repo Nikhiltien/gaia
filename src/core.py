@@ -171,3 +171,32 @@ class GAIA:
             #     continue
             
             break
+
+    def train_agent(num_episodes, env, agent):
+        for episode in range(num_episodes):
+            state = env.reset()
+            total_reward = 0
+            done = False
+
+            while not done:
+                action = agent.select_action(state, agent.epsilon)
+                next_state, reward, done, _ = env.step(action)
+                agent.remember(state, action, reward, next_state, done)
+                agent.replay()  # Update the agent's knowledge base
+                state = next_state
+                total_reward += reward
+
+            print(f"Episode {episode + 1}: Total Reward = {total_reward}")
+
+            # Decay epsilon to reduce exploration over time
+            agent.epsilon = max(agent.epsilon * 0.99, 0.01)  # Adjust the decay rate as necessary
+
+            if episode % 10 == 0:
+                torch.save(agent.model.state_dict(), 'models/tet/Tet.pth')
+                print("Model checkpoint saved.")
+
+            if done:
+                break
+
+        print("Training completed.")
+        torch.save(agent.model.state_dict(), 'models/tet/Tet.pth')

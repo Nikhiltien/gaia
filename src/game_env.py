@@ -6,11 +6,12 @@ import gymnasium as gym
 from gymnasium.spaces import Box, Dict, Discrete, MultiDiscrete
 
 from src.models.tet.tet import DDQN, Agent
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import List, Tuple
 from numpy.typing import NDArray
 from numpy_ringbuffer import RingBuffer
 from src.utils import math
+from src.oms import OMS
 from src.feed import Feed
 from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
@@ -44,18 +45,8 @@ class GameEnv(gym.Env):
 
         self.actions = GameActions(send_socket)
         self.action_space = gym.spaces.Box(
-            low=np.concatenate([
-                -np.ones(max_depth),  # Bid price decrease %
-                np.zeros(max_depth),  # Ask price increase %
-                -np.ones(max_depth),  # Bid quantities (as % of max possible)
-                np.zeros(max_depth),  # Ask quantities (as % of max possible)
-            ]),
-            high=np.concatenate([
-                np.zeros(max_depth),  # Bid price decrease % stops at 0
-                np.ones(max_depth),   # Ask price increase %
-                np.zeros(max_depth),   # Bid quantities (as % of max possible)
-                np.ones(max_depth),   # Ask quantities (as % of max possible)
-            ]),
+            low=np.zeros(max_depth * 4),
+            high=np.ones(max_depth * 4),
             dtype=np.float32
         )
 
@@ -92,7 +83,7 @@ class GameEnv(gym.Env):
         current_state = self.get_current_state()
 
         action = self.agent.select_action(current_state, self.agent.epsilon)
-        next_state, reward, done, info = self.apply_action(action)  # Implement apply_action
+        next_state, reward, done, info = self.apply_action(action)
         self.agent.remember(current_state, action, reward, next_state, done)
         
         # Occasionally train the agent
@@ -108,35 +99,47 @@ class GameEnv(gym.Env):
         pass
 
     def close(self):
-        torch.save(self.agent.model.state_dict(), 'models/tet/Tet.pth')
         # TODO
         pass
 
-    def calculate_reward(self):
-        # Example reward function
+    def calculate_reward(self, orders):
         profit_loss = self.calculate_pnl_1h()
-        # inventory_penalty = -abs(self.current_inventory) * self.inventory_penalty_rate  # Penalize large inventories
-        return profit_loss # + inventory_penalty
+        penalty = 0
+        total_order_qty = sum(order['qty'] for order in orders)
+
+        if total_order_qty > 1:
+            penalty += 50 * (total_order_qty - 1)  # Penalize for overallocation
+
+        for order in orders:
+            price = order['price']
+            qty = order['qty']
+            mid_price = self.get_mid_price(self.feed.contracts[0]['symbol'])
+            price_deviation = abs(price - mid_price) / mid_price
+            if price_deviation > 0.15:  # More than 15% from mid price
+                penalty += 20 * qty  # Increase penalty based on the amount and deviation
+
+        return profit_loss - penalty
 
     def check_if_done(self):
-        True
+        False
 
     def apply_action(self, action):
         # Decode the normalized actions to actual market orders
-        bids, asks = self.decode_action(action)
+        orders = self.decode_action(action)
         
         # Here you would format these for your OMS
-        new_orders = self.format_orders(bids, asks)
+        new_orders = self.format_orders(orders)
         
-        # Send orders to OMS - assume there is a method in GameActions to handle this
+        # Send orders to OMS
         self.actions.place_orders(new_orders)
         
-        # Assuming the OMS executes orders and updates market state asynchronously
-        # You need to wait or poll for an update to market state
+        # The OMS executes orders and updates market state asynchronously
+        # Need to wait or poll for an update to market state
         next_state = self.get_current_state()
         
         # Calculate reward based on the action's market effect
-        reward = self.calculate_reward()
+        reward = self.calculate_reward(new_orders)
+        print(f'Reward calculated: {reward}')
         
         # Check if the trading conditions or other criteria end the episode
         done = self.check_if_done()
@@ -147,25 +150,25 @@ class GameEnv(gym.Env):
         return next_state, reward, done, info
 
     def decode_action(self, action):
-        for contract in self.feed.contracts:
-            mid_price = self.get_mid_price(contract['symbol'])
-        balance = self.get_balance()
-        max_qty = balance / (mid_price / self.default_leverage)
+        orders = []
+        inventory_value, _ = self.get_inventory_value()
+        portfolio_value = self.get_balance() + inventory_value / self.default_leverage
+        mid_price = self.get_mid_price(self.feed.contracts[0]['symbol'])
+        max_qty = (portfolio_value * self.default_leverage) / mid_price
 
-        bid_adjustments = -np.abs(action[:self.max_depth])  # Ensure negative adjustments
-        ask_adjustments = np.abs(action[self.max_depth:2*self.max_depth])  # Ensure positive adjustments
+        for i in range(self.max_depth):
+            bid_price_pct, bid_qty_pct, ask_price_pct, ask_qty_pct = action[i*4:(i+1)*4]
+            bid_price = mid_price * (1 - bid_price_pct)
+            bid_qty = max_qty * bid_qty_pct 
+            ask_price = mid_price * (1 + ask_price_pct)
+            ask_qty = max_qty * ask_qty_pct
 
-        bids_prices = mid_price * (1 + bid_adjustments)
-        asks_prices = mid_price * (1 + ask_adjustments)
-        
-        bids_quantities = max_qty * np.abs(action[2*self.max_depth:3*self.max_depth])  # Ensure non-negative quantities
-        asks_quantities = max_qty * np.abs(action[3*self.max_depth:])  # Ensure non-negative quantities
+            if bid_qty > 0:
+                orders.append(('BUY', bid_price, bid_qty))
+            if ask_qty > 0:
+                orders.append(('SELL', ask_price, ask_qty))
 
-        # Create tuples of (side, price, quantity)
-        bids = [('BUY', p, q) for p, q in zip(bids_prices, bids_quantities)]
-        asks = [('SELL', p, q) for p, q in zip(asks_prices, asks_quantities)]
-
-        return bids, asks
+        return orders
 
     async def _monitor_feed_updates(self):
         while True:
@@ -297,13 +300,9 @@ class GameEnv(gym.Env):
                 total_value += position_value
         return total_value / item['leverage'], individual_values
 
-    def format_orders(self, bids, asks):
-        # Format these for your OMS
-        orders = []
-        for side, price, qty in bids + asks:
-            order = {'side': side, 'price': price, 'qty': qty}
-            orders.append(order)
-        return orders
+    def format_orders(self, orders):
+        formatted_orders = [{'side': side, 'price': float(price), 'qty': float(qty)} for side, price, qty in orders]
+        return formatted_orders
 
     def get_orders_for_symbol(self, symbol: str) -> NDArray:
         # Filter active orders by symbol
@@ -425,6 +424,7 @@ class GameEnv(gym.Env):
 class GameActions(gym.Env):
     def __init__(self, socket: PublisherSocket) -> None:
         self.send = socket
+        # self.oms = OMS()
 
     def place_orders(self, orders: List[Tuple[str, float, float]]) -> List[Tuple[str, float, float]]:
         self.send.publish_data('orders', orders)

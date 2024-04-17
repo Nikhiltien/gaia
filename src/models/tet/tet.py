@@ -40,13 +40,14 @@ class DDQN(nn.Module):
         self.loss = nn.MSELoss()
     
     def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = torch.sigmoid(self.fc3(x))
+        return x
 
 
 class Agent:
-    def __init__(self, model, gamma=0.99, epsilon=1, lr=0.001, batch_size=64):
+    def __init__(self, model: DDQN, gamma=0.99, epsilon=0.9, lr=0.001, batch_size=64):
         
         self.model = model
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
@@ -63,7 +64,7 @@ class Agent:
                 q_values = self.model(state)
                 action = q_values.argmax(dim=1).cpu().numpy()  # Ensure it returns array-like actions
         else:
-            action = np.random.uniform(low=-1, high=1, size=self.model.fc3.out_features)  # Random actions
+            action = np.random.uniform(low=0, high=1, size=self.model.fc3.out_features)  # Random actions
         return action
 
     def remember(self, state, action, reward, next_state, done):
