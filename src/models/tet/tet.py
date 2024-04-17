@@ -35,9 +35,9 @@ class DDQN(nn.Module):
 
         # self.features_model = GRUTransformerModel(input_size, hidden_size, num_layers, num_heads, dim_feedforward, output_size)
         self.fc1 = nn.Linear(input_dim, 128)
-        self.dropout1 = nn.Dropout(p=0.2)
+        # self.dropout1 = nn.Dropout(p=0.2)
         self.fc2 = nn.Linear(128, 64)
-        self.dropout2 = nn.Dropout(p=0.2)
+        # self.dropout2 = nn.Dropout(p=0.2)
         self.fc3a = nn.Linear(64, action_dim)  # Output for asks
         self.fc3b = nn.Linear(64, action_dim)  # Output for bids
 
@@ -48,9 +48,9 @@ class DDQN(nn.Module):
         # You might need to adjust how you handle the sequence, here's a simple way:
         x = x.mean(dim=1)  # Taking the mean over the sequence as a simple form of aggregation
         x = F.relu(self.fc1(x))
-        x = self.dropout1(x)
+        # x = self.dropout1(x)
         x = F.relu(self.fc2(x))
-        x = self.dropout2(x)
+        # x = self.dropout2(x)
         bid_scores = self.fc3a(x)
         ask_scores = self.fc3b(x)
         return bid_scores, ask_scores

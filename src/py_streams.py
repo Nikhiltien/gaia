@@ -79,7 +79,7 @@ class Inventory:
                     except ValueError:
                         logging.error(f"Invalid format in position data: {position}")
 
-            self.feed.ready = True # TODO
+            # self.feed.ready = True # TODO
             logging.info('Inventory is synced.')
 
     async def _process_fills(self, fill: Dict):
