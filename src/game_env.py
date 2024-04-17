@@ -78,7 +78,8 @@ class GameEnv(gym.Env):
         await asyncio.sleep(5)
 
         while True:
-            self.get_status()
+            if self.ready:
+                self.get_status()
             await asyncio.sleep(30)
 
     def step(self):
@@ -148,27 +149,6 @@ class GameEnv(gym.Env):
         
         return next_state, reward, done, info
 
-    def decode_action(self, action):
-        bid_action, ask_action = action
-        bid_price_idx, bid_qty_idx = divmod(bid_action, 50)
-        ask_price_idx, ask_qty_idx = divmod(ask_action, 50)
-
-        inventory_value, _ = self.get_inventory_value()
-        portfolio_value = self.get_balance() + inventory_value / self.default_leverage
-        
-        mid_price = self.get_mid_price(self.feed.contracts[0]['symbol'])
-        bid_price = mid_price * (1 - 0.01 * bid_price_idx)  # 1% per level for simplicity
-        ask_price = mid_price * (1 + 0.01 * ask_price_idx)
-        
-        max_bid_qty = (portfolio_value / mid_price) * (bid_qty_idx / 49)  # Normalize qty index
-        max_ask_qty = (portfolio_value / mid_price) * (ask_qty_idx / 49)
-        
-        orders = [('BUY', bid_price, max_bid_qty), ('SELL', ask_price, max_ask_qty)]
-        return self.format_orders(orders)
-
-    def format_orders(self, orders):
-        return [{'side': side, 'price': float(price), 'qty': float(qty)} for side, price, qty in orders]
-
     async def _monitor_feed_updates(self):
         while True:
             if not self.feed.ready:
@@ -207,7 +187,8 @@ class GameEnv(gym.Env):
             if update_symbol:
                 await self._process_update()
                 if self.ready:
-                    self.step()
+                    _, _, _, info = self.step()
+                    self.logger.debug(f"Step: {info}")
                 self.feed.dequeue_symbol_update(update_symbol)
 
     def get_status(self):
@@ -271,6 +252,43 @@ class GameEnv(gym.Env):
             timestep_data.append(symbol_data)
 
         self.state.append((orders_data, inventory_data, balance_data, timestep_data))
+
+    def _process_symbol_data(self, symbol: str):
+        """Processes the data for a given symbol."""
+        # Get the most recent data from order books and trades
+        order_book_data = self._get_last(self.feed.order_books[symbol])
+        trade_data = self._get_last(self.feed.trades[symbol])
+        klines_data = self._get_last(self.feed.klines[symbol])
+
+        # Check if trade data is stale
+        if trade_data[0] < order_book_data[0]:
+            # Use zeros for trade data if stale (preserve the number of columns in trade data)
+            trade_data = np.zeros_like(trade_data)
+            # Align timestamps
+            trade_data[0] = order_book_data[0]
+        
+        return (order_book_data[1], trade_data, klines_data)
+
+    def decode_action(self, action):
+        bid_action, ask_action = action
+        bid_price_idx, bid_qty_idx = divmod(bid_action, 50)
+        ask_price_idx, ask_qty_idx = divmod(ask_action, 50)
+
+        inventory_value, _ = self.get_inventory_value()
+        portfolio_value = self.get_balance() + inventory_value / self.default_leverage
+        
+        mid_price = self.get_mid_price(self.feed.contracts[0]['symbol'])
+        bid_price = mid_price * (1 - 0.01 * bid_price_idx)  # 1% per level for simplicity
+        ask_price = mid_price * (1 + 0.01 * ask_price_idx)
+        
+        max_bid_qty = (portfolio_value / mid_price) * (bid_qty_idx / 49)  # Normalize qty index
+        max_ask_qty = (portfolio_value / mid_price) * (ask_qty_idx / 49)
+        
+        orders = [('BUY', bid_price, max_bid_qty), ('SELL', ask_price, max_ask_qty)]
+        return self.format_orders(orders)
+
+    def format_orders(self, orders):
+        return [{'side': side, 'price': float(price), 'qty': float(qty)} for side, price, qty in orders]
 
     def _get_last(self, data: RingBuffer) -> np.ndarray:
         return data._unwrap()[-1]
@@ -404,22 +422,7 @@ class GameEnv(gym.Env):
         ]
         max_drawdown_1h = min(drawdowns) if drawdowns else 0
         return max_drawdown_1h
-    
-    def _process_symbol_data(self, symbol: str):
-        """Processes the data for a given symbol."""
-        # Get the most recent data from order books and trades
-        order_book_data = self._get_last(self.feed.order_books[symbol])
-        trade_data = self._get_last(self.feed.trades[symbol])
-        klines_data = self._get_last(self.feed.klines[symbol])
 
-        # Check if trade data is stale
-        if trade_data[0] < order_book_data[0]:
-            # Use zeros for trade data if stale (preserve the number of columns in trade data)
-            trade_data = np.zeros_like(trade_data)
-            # Align timestamps
-            trade_data[0] = order_book_data[0]
-        
-        return (order_book_data[1], trade_data, klines_data)
 
 class GameActions(gym.Env):
     def __init__(self, socket: PublisherSocket) -> None:

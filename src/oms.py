@@ -50,6 +50,7 @@ class OMS():
                     }
                 }
             }
+            # await self.cancel_all_orders()
             # self.exchange.place_order(exchange_order)
             print(f"New Orders: {exchange_order}")
         # pass
