@@ -89,21 +89,31 @@ class Agent:
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
 
-        states = torch.tensor(np.array(states), dtype=torch.float32)
-        next_states = torch.tensor(np.array(next_states), dtype=torch.float32)
-        rewards = torch.tensor(np.array(rewards), dtype=torch.float32)
-        dones = torch.tensor(np.array(dones), dtype=torch.bool)
+        states = torch.tensor(states, dtype=torch.float32)
+        next_states = torch.tensor(next_states, dtype=torch.float32)
+        rewards = torch.tensor(rewards, dtype=torch.float32)
+        dones = torch.tensor(dones, dtype=torch.bool)
 
-        bid_actions, ask_actions = zip(*[action for action in actions])
+        bid_actions, ask_actions = zip(*actions)
         bid_actions = torch.tensor(bid_actions, dtype=torch.long).unsqueeze(-1)
         ask_actions = torch.tensor(ask_actions, dtype=torch.long).unsqueeze(-1)
 
         bid_scores, ask_scores = self.model(states)
+        next_bid_scores, next_ask_scores = self.model(next_states)
+
+        # Calculating the expected Q values
+        next_bid_q_values = next_bid_scores.max(1)[0].detach()
+        next_ask_q_values = next_ask_scores.max(1)[0].detach()
+
+        expected_bid_q_values = rewards + self.gamma * next_bid_q_values * (~dones)
+        expected_ask_q_values = rewards + self.gamma * next_ask_q_values * (~dones)
+
         bid_q_values = bid_scores.gather(1, bid_actions).squeeze()
         ask_q_values = ask_scores.gather(1, ask_actions).squeeze()
 
-        # Assuming `rewards` are continuous values and represent the target value
-        loss = self.loss_fn(bid_q_values, rewards) + self.loss_fn(ask_q_values, rewards)
+        loss_bid = self.loss_fn(bid_q_values, expected_bid_q_values)
+        loss_ask = self.loss_fn(ask_q_values, expected_ask_q_values)
+        loss = loss_bid + loss_ask
 
         self.optimizer.zero_grad()
         loss.backward()

@@ -37,9 +37,22 @@ class OMS():
         pass
 
     async def place_orders(self, new_orders: List[Tuple[str, float, float]]):
-        # TODO
-        # print(f"New Orders: {new_orders}")
-        pass
+        for order in new_orders:
+            exchange_order = {
+                "symbol": "ETH", # TODO temporary
+                "side": order['side'],
+                "price": order['price'],
+                "qty": order['qty'],
+                "reduceOnly": False,
+                "orderType": {
+                    "limit": {
+                        "tif": "Gtc"
+                    }
+                }
+            }
+            # self.exchange.place_order(exchange_order)
+            print(f"New Orders: {exchange_order}")
+        # pass
 
     async def cancel_order(self, order: Dict[str, int]):
         await self.exchange.cancel_order(order)

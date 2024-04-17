@@ -60,8 +60,10 @@ class GameEnv(gym.Env):
         ##         - klines (array): Latest candlestick (klines) data.
 
         self.state = RingBuffer(capacity=SEQUENCE_LENGTH, dtype=object)
+        self.cumulative_reward = 0
         self.ready = False
         self.steps = 0
+        self.reset()
 
     async def start(self):
         self.logger.info(f"Setting leverage to default ({self.default_leverage}) for all symbols.")
@@ -80,20 +82,30 @@ class GameEnv(gym.Env):
             await asyncio.sleep(30)
 
     def step(self):
+        self.steps += 1
         current_state = self.get_current_state()
-
         action = self.agent.select_action(current_state)
         next_state, reward, done, info = self.apply_action(action)
-        self.agent.remember(current_state, action, reward, next_state, done)
         
-        # Occasionally train the agent
-        if len(self.agent.memory) > self.agent.batch_size:
-            self.agent.replay()
-
+        # Accumulate reward
+        self.cumulative_reward += reward
+        
+        # Check if the episode should end
+        if done is True:
+            reward = self.cumulative_reward  # Use accumulated reward
+            self.agent.remember(current_state, action, reward, next_state, done)
+            self.reset()
+        else:
+            self.agent.remember(current_state, action, reward, next_state, done)
+        
         return next_state, reward, done, info
 
     def reset(self):
-        pass
+        self.cumulative_reward = 0
+        self.steps = 0
+        self.state = RingBuffer(capacity=SEQUENCE_LENGTH, dtype=object)
+        self.ready = False
+        # return self.get_current_state()
 
     def render(self):
         pass
@@ -102,26 +114,16 @@ class GameEnv(gym.Env):
         # TODO
         pass
 
-    def calculate_reward(self, orders):
-        profit_loss = self.calculate_pnl_1h()
+    def calculate_reward(self):
+        profit_loss = self.calculate_unrealized_pnl()
         penalty = 0
-        total_order_qty = sum(order['qty'] for order in orders)
-
-        if total_order_qty > 1:
-            penalty += 50 * (total_order_qty - 1)  # Penalize for overallocation
-
-        for order in orders:
-            price = order['price']
-            qty = order['qty']
-            mid_price = self.get_mid_price(self.feed.contracts[0]['symbol'])
-            price_deviation = abs(price - mid_price) / mid_price
-            if price_deviation > 0.15:  # More than 15% from mid price
-                penalty += 20 * qty  # Increase penalty based on the amount and deviation
 
         return profit_loss - penalty
 
     def check_if_done(self):
-        return 0
+        if self.steps <= 500:
+            return False
+        return True
 
     def apply_action(self, action):
         # Decode the normalized actions to actual market orders
@@ -135,8 +137,8 @@ class GameEnv(gym.Env):
         next_state = self.get_current_state()
         
         # Calculate reward based on the action's market effect
-        reward = self.calculate_reward(orders)
-        print(f'Reward calculated: {reward}')
+        reward = self.calculate_reward()
+        # print(f'Reward calculated: {reward}')
         
         # Check if the trading conditions or other criteria end the episode
         done = self.check_if_done()
@@ -169,7 +171,7 @@ class GameEnv(gym.Env):
 
     async def _monitor_feed_updates(self):
         while True:
-            if not self.ready:
+            if not self.feed.ready:
                 all_lengths = {}
                 # Iterate over order books, trades, and klines for each contract to check their lengths.
                 for contract in self.feed.contracts:
@@ -187,19 +189,24 @@ class GameEnv(gym.Env):
                         self.logger.info(f"{data_type} length {length} is below {MIN_BUFFER_SIZE}.")
 
                 if all(length >= MIN_BUFFER_SIZE for length in all_lengths.values()):
-                    self.ready = True
-                    self.logger.info("GameEnv is ready!")
+                    self.feed.ready = True
+                    print("Feed is ready!")
                 else:
                     # print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
                     await asyncio.sleep(10)  # Wait and then check again.
                     continue
             
+            if not self.ready:
+                if len(self.state) >= SEQUENCE_LENGTH:
+                    self.ready = True
+                    print("GameEnv is ready!")
+
             # Process updates only when data is ready.
             update_symbol = await self.feed.peek_symbol_update()
 
             if update_symbol:
                 await self._process_update()
-                if len(self.state) >= SEQUENCE_LENGTH:
+                if self.ready:
                     self.step()
                 self.feed.dequeue_symbol_update(update_symbol)
 
@@ -354,7 +361,7 @@ class GameEnv(gym.Env):
 
         return math.get_wmid(bba)
 
-    def calculate_unrealized_pnl(self):
+    def calculate_unrealized_pnl(self) -> int:
         unrealized_pnl = 0.0
         for symbol, item in self.feed.inventory.items():
             prices = self.feed.klines[symbol]._unwrap()

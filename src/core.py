@@ -174,29 +174,25 @@ class GAIA:
 
     def train_agent(num_episodes, env, agent):
         for episode in range(num_episodes):
-            state = env.reset()
+            state = env.reset()  # Reset the environment for a new episode
             total_reward = 0
             done = False
 
             while not done:
-                action = agent.select_action(state, agent.epsilon)
-                next_state, reward, done, _ = env.step(action)
-                agent.remember(state, action, reward, next_state, done)
-                agent.replay()  # Update the agent's knowledge base
-                state = next_state
-                total_reward += reward
+                action = agent.select_action(state)
+                next_state, reward, done, _ = env.step(action)  # Execute action in the environment
+                agent.remember(state, action, reward, next_state, done)  # Store experience in memory
+                agent.replay()  # Perform a training step using a batch from the memory
 
-            print(f"Episode {episode + 1}: Total Reward = {total_reward}")
+                state = next_state  # Move to the next state
+                total_reward += reward  # Accumulate rewards
 
-            # Decay epsilon to reduce exploration over time
-            agent.epsilon = max(agent.epsilon * 0.99, 0.01)  # Adjust the decay rate as necessary
+            logging.info(f"Episode {episode + 1}: Total Reward = {total_reward}")
+            agent.epsilon = max(agent.epsilon * agent.epsilon_decay, agent.epsilon_min)  # Decay exploration rate
 
-            if episode % 10 == 0:
+            if episode % 10 == 0:  # Save model checkpoint periodically
                 torch.save(agent.model.state_dict(), 'models/tet/Tet.pth')
-                print("Model checkpoint saved.")
+                logging.info("Model checkpoint saved.")
 
-            if done:
-                break
-
-        print("Training completed.")
+        logging.info("Training completed.")
         torch.save(agent.model.state_dict(), 'models/tet/Tet.pth')
