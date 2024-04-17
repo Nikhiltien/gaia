@@ -24,48 +24,61 @@ SYMBOLS_DATA_DIM = SYMBOLS * ORDER_BOOK_DIM + TRADES_DIM + KLINES_DIM
 
 INPUT_DIM = ORDERS_DIM + INVENTORY_DIM + BALANCES_DIM + SYMBOLS_DATA_DIM
 
-ACTION_SIZE = ORDER_BOOK_DIM
-    
+QTY_INCREMENT = 2 # as a %
+ACTION_DIM = MAX_DEPTH * (100 // QTY_INCREMENT)
+
 
 class DDQN(nn.Module):
-    def __init__(self, input_dim=INPUT_DIM, action_dim=ACTION_SIZE, lr=0.001, hidden_size=128, num_layers=2, 
+    def __init__(self, input_dim=INPUT_DIM, action_dim=ACTION_DIM, lr=0.001, hidden_size=128, num_layers=2, 
                  num_heads=8, dim_feedforward=256):
         super(DDQN, self).__init__()
 
         # self.features_model = GRUTransformerModel(input_size, hidden_size, num_layers, num_heads, dim_feedforward, output_size)
         self.fc1 = nn.Linear(input_dim, 128)
+        self.dropout1 = nn.Dropout(p=0.2)
         self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, action_dim)
-        self.optimizer = optim.Adam(self.parameters(), lr)
-        self.loss = nn.MSELoss()
+        self.dropout2 = nn.Dropout(p=0.2)
+        self.fc3a = nn.Linear(64, action_dim)  # Output for asks
+        self.fc3b = nn.Linear(64, action_dim)  # Output for bids
+
+        self.optimizer = optim.Adam(self.parameters(), lr, weight_decay=1e-5)  # Added L2 regularization
     
     def forward(self, x):
+        # Assuming x is of shape [batch_size, sequence_length, feature_dim]
+        # You might need to adjust how you handle the sequence, here's a simple way:
+        x = x.mean(dim=1)  # Taking the mean over the sequence as a simple form of aggregation
         x = F.relu(self.fc1(x))
+        x = self.dropout1(x)
         x = F.relu(self.fc2(x))
-        x = torch.sigmoid(self.fc3(x))
-        return x
-
+        x = self.dropout2(x)
+        bid_scores = self.fc3a(x)
+        ask_scores = self.fc3b(x)
+        return bid_scores, ask_scores
 
 class Agent:
-    def __init__(self, model: DDQN, gamma=0.99, epsilon=0.9, lr=0.001, batch_size=64):
-        
+    def __init__(self, model: DDQN, gamma=0.99, epsilon=0.9, epsilon_min=0.01, epsilon_decay=0.995, lr=0.001, batch_size=1):
         self.model = model
+        self.gamma = gamma
+        self.epsilon = epsilon  # Starting epsilon
+        self.epsilon_min = epsilon_min  # Minimum epsilon
+        self.epsilon_decay = epsilon_decay  # Epsilon decay rate
+        self.batch_size = batch_size
+        self.memory = deque(maxlen=10000)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.loss_fn = nn.MSELoss()
-        self.memory = deque(maxlen=10000)
-        self.batch_size = batch_size
-        self.gamma = gamma  # Discount factor for future rewards
-        self.epsilon = epsilon
 
-    def select_action(self, state, epsilon):
-        if random.random() > epsilon:
-            state = torch.tensor(state, dtype=torch.float32, device='cpu').unsqueeze(0)
-            with torch.no_grad():
-                q_values = self.model(state)
-                action = q_values.argmax(dim=1).cpu().numpy()  # Ensure it returns array-like actions
+    def select_action(self, state):
+        self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
+        
+        if random.random() > self.epsilon:
+            state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+            bid_scores, ask_scores = self.model(state_tensor)
+            bid_action = bid_scores.argmax(1).item()
+            ask_action = ask_scores.argmax(1).item()
         else:
-            action = np.random.uniform(low=0, high=1, size=self.model.fc3.out_features)  # Random actions
-        return action
+            bid_action = np.random.randint(0, 500)
+            ask_action = np.random.randint(0, 500)
+        return bid_action, ask_action
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -75,18 +88,22 @@ class Agent:
             return
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
-        
-        states = torch.tensor(states, dtype=torch.float32)
-        next_states = torch.tensor(next_states, dtype=torch.float32)
-        actions = torch.tensor(actions)
-        rewards = torch.tensor(rewards)
-        dones = torch.tensor(dones, dtype=torch.float32)
 
-        current_q_values = self.model(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-        next_q_values = self.model(next_states).max(1)[0]
-        expected_q_values = rewards + self.gamma * next_q_values * (1 - dones)
+        states = torch.tensor(np.array(states), dtype=torch.float32)
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float32)
+        rewards = torch.tensor(np.array(rewards), dtype=torch.float32)
+        dones = torch.tensor(np.array(dones), dtype=torch.bool)
 
-        loss = self.loss_fn(current_q_values, expected_q_values)
+        bid_actions, ask_actions = zip(*[action for action in actions])
+        bid_actions = torch.tensor(bid_actions, dtype=torch.long).unsqueeze(-1)
+        ask_actions = torch.tensor(ask_actions, dtype=torch.long).unsqueeze(-1)
+
+        bid_scores, ask_scores = self.model(states)
+        bid_q_values = bid_scores.gather(1, bid_actions).squeeze()
+        ask_q_values = ask_scores.gather(1, ask_actions).squeeze()
+
+        # Assuming `rewards` are continuous values and represent the target value
+        loss = self.loss_fn(bid_q_values, rewards) + self.loss_fn(ask_q_values, rewards)
 
         self.optimizer.zero_grad()
         loss.backward()

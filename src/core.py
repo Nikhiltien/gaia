@@ -114,7 +114,7 @@ class GAIA:
         atexit.register(self.exit)
         signal.signal(signal.SIGTERM, self.exit)
 
-    async def run(self) -> None:
+    async def run(self, console=False) -> None:
 
         env_path = os.path.expanduser('~/gaia/keys/private_key.env')
         load_dotenv(dotenv_path=env_path)

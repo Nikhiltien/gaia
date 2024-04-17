@@ -38,7 +38,7 @@ class OMS():
 
     async def place_orders(self, new_orders: List[Tuple[str, float, float]]):
         # TODO
-        print(f"New Orders: {new_orders}")
+        # print(f"New Orders: {new_orders}")
         pass
 
     async def cancel_order(self, order: Dict[str, int]):

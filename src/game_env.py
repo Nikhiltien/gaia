@@ -3,7 +3,7 @@ import asyncio
 import logging
 import numpy as np
 import gymnasium as gym
-from gymnasium.spaces import Box, Dict, Discrete, MultiDiscrete
+from gymnasium.spaces import Box, Dict, Discrete, MultiDiscrete, Tuple as gymTuple
 
 from src.models.tet.tet import DDQN, Agent
 from datetime import datetime, timedelta
@@ -18,6 +18,7 @@ from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 MAX_ORDERS = 20
 SEQUENCE_LENGTH = 50
+MIN_BUFFER_SIZE = 1
 
 
 class GameEnv(gym.Env):
@@ -35,20 +36,19 @@ class GameEnv(gym.Env):
         self.agent = agent
         self.feed = feed
         self.observation_space = Dict({
-            'order_books': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, self.max_depth * 4), dtype=np.float32),
-            'trades': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 7), dtype=np.float32),
-            'klines': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 6), dtype=np.float32),
             'orders': Box(low=-np.inf, high=np.inf, shape=(MAX_ORDERS, 3), dtype=np.float32),
             'inventory': Box(low=-np.inf, high=np.inf, shape=(len(self.feed.contracts), 3), dtype=np.float32),
             'balances': Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32),
+            'order_books': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, self.max_depth * 4), dtype=np.float32),
+            'trades': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 7), dtype=np.float32),
+            'klines': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 6), dtype=np.float32),
         })
 
         self.actions = GameActions(send_socket)
-        self.action_space = gym.spaces.Box(
-            low=np.zeros(max_depth * 4),
-            high=np.ones(max_depth * 4),
-            dtype=np.float32
-        )
+        self.action_space = gymTuple([
+            Discrete(self.max_depth * 50),  # Bid actions: 10 price levels * 50 quantity increments
+            Discrete(self.max_depth * 50)   # Ask actions: 10 price levels * 50 quantity increments
+        ])
 
         ## Ring buffer holding the environment's states. Each element in the buffer is a tuple structured as follows:
         ##     - orders (array): Current active orders array.
@@ -82,7 +82,7 @@ class GameEnv(gym.Env):
     def step(self):
         current_state = self.get_current_state()
 
-        action = self.agent.select_action(current_state, self.agent.epsilon)
+        action = self.agent.select_action(current_state)
         next_state, reward, done, info = self.apply_action(action)
         self.agent.remember(current_state, action, reward, next_state, done)
         
@@ -121,54 +121,51 @@ class GameEnv(gym.Env):
         return profit_loss - penalty
 
     def check_if_done(self):
-        False
+        return 0
 
     def apply_action(self, action):
         # Decode the normalized actions to actual market orders
         orders = self.decode_action(action)
         
-        # Here you would format these for your OMS
-        new_orders = self.format_orders(orders)
-        
         # Send orders to OMS
-        self.actions.place_orders(new_orders)
+        self.actions.place_orders(orders)
         
         # The OMS executes orders and updates market state asynchronously
         # Need to wait or poll for an update to market state
         next_state = self.get_current_state()
         
         # Calculate reward based on the action's market effect
-        reward = self.calculate_reward(new_orders)
+        reward = self.calculate_reward(orders)
         print(f'Reward calculated: {reward}')
         
         # Check if the trading conditions or other criteria end the episode
         done = self.check_if_done()
         
         # Additional info can be returned for debugging or logging purposes
-        info = {'new_orders': new_orders}
+        info = {'new_orders': orders}
         
         return next_state, reward, done, info
 
     def decode_action(self, action):
-        orders = []
+        bid_action, ask_action = action
+        bid_price_idx, bid_qty_idx = divmod(bid_action, 50)
+        ask_price_idx, ask_qty_idx = divmod(ask_action, 50)
+
         inventory_value, _ = self.get_inventory_value()
         portfolio_value = self.get_balance() + inventory_value / self.default_leverage
+        
         mid_price = self.get_mid_price(self.feed.contracts[0]['symbol'])
-        max_qty = (portfolio_value * self.default_leverage) / mid_price
+        bid_price = mid_price * (1 - 0.01 * bid_price_idx)  # 1% per level for simplicity
+        ask_price = mid_price * (1 + 0.01 * ask_price_idx)
+        
+        max_bid_qty = (portfolio_value / mid_price) * (bid_qty_idx / 49)  # Normalize qty index
+        max_ask_qty = (portfolio_value / mid_price) * (ask_qty_idx / 49)
+        
+        orders = [('BUY', bid_price, max_bid_qty), ('SELL', ask_price, max_ask_qty)]
+        return self.format_orders(orders)
 
-        for i in range(self.max_depth):
-            bid_price_pct, bid_qty_pct, ask_price_pct, ask_qty_pct = action[i*4:(i+1)*4]
-            bid_price = mid_price * (1 - bid_price_pct)
-            bid_qty = max_qty * bid_qty_pct 
-            ask_price = mid_price * (1 + ask_price_pct)
-            ask_qty = max_qty * ask_qty_pct
-
-            if bid_qty > 0:
-                orders.append(('BUY', bid_price, bid_qty))
-            if ask_qty > 0:
-                orders.append(('SELL', ask_price, ask_qty))
-
-        return orders
+    def format_orders(self, orders):
+        return [{'side': side, 'price': float(price), 'qty': float(qty)} for side, price, qty in orders]
 
     async def _monitor_feed_updates(self):
         while True:
@@ -186,15 +183,15 @@ class GameEnv(gym.Env):
                     all_lengths[f'{symbol}_klines'] = klines_length
 
                 for data_type, length in all_lengths.items():
-                    if length < 2:
-                        self.logger.info(f"{data_type} length {length} is below 2.")
+                    if length < MIN_BUFFER_SIZE:
+                        self.logger.info(f"{data_type} length {length} is below {MIN_BUFFER_SIZE}.")
 
-                if all(length >= 2 for length in all_lengths.values()):
+                if all(length >= MIN_BUFFER_SIZE for length in all_lengths.values()):
                     self.ready = True
                     self.logger.info("GameEnv is ready!")
                 else:
                     # print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
-                    await asyncio.sleep(20)  # Wait and then check again.
+                    await asyncio.sleep(10)  # Wait and then check again.
                     continue
             
             # Process updates only when data is ready.
@@ -299,10 +296,6 @@ class GameEnv(gym.Env):
                 individual_values[symbol] = position_value
                 total_value += position_value
         return total_value / item['leverage'], individual_values
-
-    def format_orders(self, orders):
-        formatted_orders = [{'side': side, 'price': float(price), 'qty': float(qty)} for side, price, qty in orders]
-        return formatted_orders
 
     def get_orders_for_symbol(self, symbol: str) -> NDArray:
         # Filter active orders by symbol
@@ -426,7 +419,13 @@ class GameActions(gym.Env):
         self.send = socket
         # self.oms = OMS()
 
-    def place_orders(self, orders: List[Tuple[str, float, float]]) -> List[Tuple[str, float, float]]:
+    def place_market_order(self, order: Tuple[str, float]):
+        pass
+
+    def place_limit_order(self, order: Tuple[str, float, float]):
+        pass
+
+    def place_orders(self, orders: List[Tuple[str, float, float]]) -> None:
         self.send.publish_data('orders', orders)
 
     def adjust_leverage(self, symbol: str, leverage: float, cross_margin: bool = True) -> None:
