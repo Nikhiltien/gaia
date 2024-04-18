@@ -29,20 +29,20 @@ ACTION_DIM = MAX_DEPTH * (100 // QTY_INCREMENT)
 
 
 class DDQN(nn.Module):
-    def __init__(self, input_dim=INPUT_DIM, action_dim=ACTION_DIM, lr=0.001, hidden_size=128, num_layers=2, 
-                 num_heads=8, dim_feedforward=256):
+    def __init__(self, input_dim=INPUT_DIM, action_dim=ACTION_DIM, lr=0.001, hidden_size=256, num_layers=2):
         super(DDQN, self).__init__()
 
-        # self.features_model = GRUTransformerModel(input_size, hidden_size, num_layers, num_heads, dim_feedforward, output_size)
+        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
         
-        # Define the primary network layers
-        self.fc1 = nn.Linear(input_dim, 128)
+        # Primary network layers
+        self.fc1 = nn.Linear(hidden_size, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3a = nn.Linear(64, action_dim)  # Output for asks
         self.fc3b = nn.Linear(64, action_dim)  # Output for bids
 
-        # Define the target network layers
-        self.target_fc1 = nn.Linear(input_dim, 128)
+        # Target network layers
+        self.target_lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.target_fc1 = nn.Linear(hidden_size, 128)
         self.target_fc2 = nn.Linear(128, 64)
         self.target_fc3a = nn.Linear(64, action_dim)
         self.target_fc3b = nn.Linear(64, action_dim)
@@ -53,13 +53,16 @@ class DDQN(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr, weight_decay=1e-5)  # Added L2 regularization
     
     def forward(self, x, model="online"):
-        x = x.mean(dim=1)
         if model == "online":
+            x, _ = self.lstm(x)  # Process input sequence
+            x = x[:, -1, :]  # Use the last output for decision making
             x = F.relu(self.fc1(x))
             x = F.relu(self.fc2(x))
             bid_scores = self.fc3a(x)
             ask_scores = self.fc3b(x)
         else:  # using the target network
+            x, _ = self.target_lstm(x)  # Process input sequence
+            x = x[:, -1, :]  # Use the last output for decision making
             x = F.relu(self.target_fc1(x))
             x = F.relu(self.target_fc2(x))
             bid_scores = self.target_fc3a(x)
@@ -68,6 +71,7 @@ class DDQN(nn.Module):
 
     def update_target_network(self):
         # Explicitly copy the parameters from the primary network to the target network
+        self.target_lstm.load_state_dict(self.lstm.state_dict())
         self.target_fc1.load_state_dict(self.fc1.state_dict())
         self.target_fc2.load_state_dict(self.fc2.state_dict())
         self.target_fc3a.load_state_dict(self.fc3a.state_dict())
