@@ -180,7 +180,7 @@ class GameEnv(gym.Env):
                     print("Feed is ready!")
                 else:
                     # print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
-                    await asyncio.sleep(10)  # Wait and then check again.
+                    await asyncio.sleep(30)  # Wait and then check again.
                     continue
             
             if not self.ready:

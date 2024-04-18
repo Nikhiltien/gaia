@@ -34,30 +34,52 @@ class DDQN(nn.Module):
         super(DDQN, self).__init__()
 
         # self.features_model = GRUTransformerModel(input_size, hidden_size, num_layers, num_heads, dim_feedforward, output_size)
+        
+        # Define the primary network layers
         self.fc1 = nn.Linear(input_dim, 128)
-        # self.dropout1 = nn.Dropout(p=0.2)
         self.fc2 = nn.Linear(128, 64)
-        # self.dropout2 = nn.Dropout(p=0.2)
         self.fc3a = nn.Linear(64, action_dim)  # Output for asks
         self.fc3b = nn.Linear(64, action_dim)  # Output for bids
 
+        # Define the target network layers
+        self.target_fc1 = nn.Linear(input_dim, 128)
+        self.target_fc2 = nn.Linear(128, 64)
+        self.target_fc3a = nn.Linear(64, action_dim)
+        self.target_fc3b = nn.Linear(64, action_dim)
+
+        # Initialize target network to be the same as the primary network
+        self.update_target_network()
+
         self.optimizer = optim.Adam(self.parameters(), lr, weight_decay=1e-5)  # Added L2 regularization
     
-    def forward(self, x):
-        # Assuming x is of shape [batch_size, sequence_length, feature_dim]
-        # You might need to adjust how you handle the sequence, here's a simple way:
-        x = x.mean(dim=1)  # Taking the mean over the sequence as a simple form of aggregation
-        x = F.relu(self.fc1(x))
-        # x = self.dropout1(x)
-        x = F.relu(self.fc2(x))
-        # x = self.dropout2(x)
-        bid_scores = self.fc3a(x)
-        ask_scores = self.fc3b(x)
+    def forward(self, x, model="online"):
+        x = x.mean(dim=1)
+        if model == "online":
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            bid_scores = self.fc3a(x)
+            ask_scores = self.fc3b(x)
+        else:  # using the target network
+            x = F.relu(self.target_fc1(x))
+            x = F.relu(self.target_fc2(x))
+            bid_scores = self.target_fc3a(x)
+            ask_scores = self.target_fc3b(x)
         return bid_scores, ask_scores
 
+    def update_target_network(self):
+        # Explicitly copy the parameters from the primary network to the target network
+        self.target_fc1.load_state_dict(self.fc1.state_dict())
+        self.target_fc2.load_state_dict(self.fc2.state_dict())
+        self.target_fc3a.load_state_dict(self.fc3a.state_dict())
+        self.target_fc3b.load_state_dict(self.fc3b.state_dict())
+
 class Agent:
-    def __init__(self, model: DDQN, gamma=0.99, epsilon=0.9, epsilon_min=0.01, epsilon_decay=0.995, lr=0.001, batch_size=1):
+    def __init__(self, model: DDQN, target_update=10, gamma=0.99, epsilon=0.9, 
+                 epsilon_min=0.01, epsilon_decay=0.995, lr=0.001, batch_size=1):
         self.model = model
+        self.target_update = target_update
+        self.update_count = 0
+
         self.gamma = gamma
         self.epsilon = epsilon  # Starting epsilon
         self.epsilon_min = epsilon_min  # Minimum epsilon
@@ -89,13 +111,8 @@ class Agent:
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
 
-        states = np.array(states)  # Convert list of numpy arrays to a single numpy array
-        next_states = np.array(next_states)
-        rewards = np.array(rewards)
-        dones = np.array(dones)
-
-        states = torch.tensor(states, dtype=torch.float32)  # Efficiently convert to a Tensor
-        next_states = torch.tensor(next_states, dtype=torch.float32)
+        states = torch.tensor(np.array(states), dtype=torch.float32)
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float32)
         rewards = torch.tensor(rewards, dtype=torch.float32)
         dones = torch.tensor(dones, dtype=torch.bool)
 
@@ -103,26 +120,32 @@ class Agent:
         bid_actions = torch.tensor(bid_actions, dtype=torch.long).unsqueeze(-1)
         ask_actions = torch.tensor(ask_actions, dtype=torch.long).unsqueeze(-1)
 
-        bid_scores, ask_scores = self.model(states)
-        next_bid_scores, next_ask_scores = self.model(next_states)
+        # Action selection from the primary network
+        _, ask_scores = self.model(states)  # Only need ask_scores for selecting actions
+        # Action evaluation from the target network
+        next_bid_scores, _ = self.model(next_states, model="target")  # Only need bid_scores for evaluating the action
 
-        # Calculating the expected Q values
-        next_bid_q_values = next_bid_scores.max(1)[0].detach()
-        next_ask_q_values = next_ask_scores.max(1)[0].detach()
+        # Gather the maximum Q value for the next state from the target network
+        next_ask_q_values = next_bid_scores.max(1)[0].detach()
 
-        expected_bid_q_values = rewards + self.gamma * next_bid_q_values * (~dones)
+        # Compute expected Q values based on selected actions from the target network
         expected_ask_q_values = rewards + self.gamma * next_ask_q_values * (~dones)
 
-        bid_q_values = bid_scores.gather(1, bid_actions).squeeze(-1)
+        # Actual Q values from the current state using the primary network
         ask_q_values = ask_scores.gather(1, ask_actions).squeeze(-1)
 
-        loss_bid = self.loss_fn(bid_q_values, expected_bid_q_values)
-        loss_ask = self.loss_fn(ask_q_values, expected_ask_q_values)
-        loss = loss_bid + loss_ask
+        # Calculate loss
+        loss = self.loss_fn(ask_q_values, expected_ask_q_values)
 
+        # Backpropagation
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+        # Periodically update the target network weights
+        if self.update_count % self.target_update == 0:
+            self.model.update_target_network()
+        self.update_count += 1
 
 
 class GRUTransformerModel(nn.Module):
