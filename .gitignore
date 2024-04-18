@@ -165,3 +165,4 @@ streams/target
 .DS_Store
 keys
 logs
+src/models/tet/Tet.pth

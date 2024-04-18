@@ -137,9 +137,10 @@ class GAIA:
 
         model = DDQN()
         try:
-            model.load_state_dict(torch.load('models/tet/Tet.pth'))
+            model.load_state_dict(torch.load('src/models/tet/Tet.pth'))
+            self.logger.info("Loaded model weights succesfully.")
         except FileNotFoundError:
-            print("No previous model found, starting new model.")
+            self.logger.info("No previous model found, starting new model.")
         agent = Agent(model)
 
         self.logger.info(f"Waiting for ready signal...")

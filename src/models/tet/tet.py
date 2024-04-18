@@ -89,7 +89,12 @@ class Agent:
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
 
-        states = torch.tensor(states, dtype=torch.float32)
+        states = np.array(states)  # Convert list of numpy arrays to a single numpy array
+        next_states = np.array(next_states)
+        rewards = np.array(rewards)
+        dones = np.array(dones)
+
+        states = torch.tensor(states, dtype=torch.float32)  # Efficiently convert to a Tensor
         next_states = torch.tensor(next_states, dtype=torch.float32)
         rewards = torch.tensor(rewards, dtype=torch.float32)
         dones = torch.tensor(dones, dtype=torch.bool)
@@ -108,8 +113,8 @@ class Agent:
         expected_bid_q_values = rewards + self.gamma * next_bid_q_values * (~dones)
         expected_ask_q_values = rewards + self.gamma * next_ask_q_values * (~dones)
 
-        bid_q_values = bid_scores.gather(1, bid_actions).squeeze()
-        ask_q_values = ask_scores.gather(1, ask_actions).squeeze()
+        bid_q_values = bid_scores.gather(1, bid_actions).squeeze(-1)
+        ask_q_values = ask_scores.gather(1, ask_actions).squeeze(-1)
 
         loss_bid = self.loss_fn(bid_q_values, expected_bid_q_values)
         loss_ask = self.loss_fn(ask_q_values, expected_ask_q_values)

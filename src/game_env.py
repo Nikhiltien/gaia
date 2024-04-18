@@ -1,4 +1,5 @@
 import torch
+import random
 import asyncio
 import logging
 import numpy as np
@@ -95,9 +96,15 @@ class GameEnv(gym.Env):
         if done is True:
             reward = self.cumulative_reward  # Use accumulated reward
             self.agent.remember(current_state, action, reward, next_state, done)
+            self.agent.replay()
+            logging.info(f"Episode complete - Total Reward: {reward}")
+            self.agent.epsilon = max(self.agent.epsilon * self.agent.epsilon_decay, self.agent.epsilon_min)
+            torch.save(self.agent.model.state_dict(), 'src/models/tet/Tet.pth')
             self.reset()
         else:
             self.agent.remember(current_state, action, reward, next_state, done)
+            if random.random() < 0.1:
+                self.agent.replay()
         
         return next_state, reward, done, info
 
@@ -116,7 +123,7 @@ class GameEnv(gym.Env):
         pass
 
     def calculate_reward(self):
-        profit_loss = self.calculate_unrealized_pnl()
+        profit_loss = self.calculate_unrealized_pnl() / 10
         penalty = 0
 
         return profit_loss - penalty
@@ -288,7 +295,12 @@ class GameEnv(gym.Env):
         return self.format_orders(orders)
 
     def format_orders(self, orders):
-        return [{'side': side, 'price': float(price), 'qty': float(qty)} for side, price, qty in orders]
+        return [
+            {'side': side,
+            'price': float(f"{price:.1f}"),  # Formats price to 1 decimal places
+            'qty': float(f"{qty:.4f}")}  # Formats qty to 4 decimal places
+            for side, price, qty in orders
+        ]
 
     def _get_last(self, data: RingBuffer) -> np.ndarray:
         return data._unwrap()[-1]

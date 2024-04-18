@@ -1,6 +1,8 @@
 import atexit
 import signal
 import asyncio
+import time
+import logging
 
 from enum import Enum
 from typing import List, Dict, Tuple, Any
@@ -16,6 +18,8 @@ class OMS():
         self.router = router
 
         self.is_running = True
+        self.last_order_time = 0
+        self.order_cooldown = 5 
 
         atexit.register(self.exit)
         signal.signal(signal.SIGTERM, self.exit)
@@ -37,6 +41,12 @@ class OMS():
         pass
 
     async def place_orders(self, new_orders: List[Tuple[str, float, float]]):
+        current_time = time.time()
+        if current_time - self.last_order_time < self.order_cooldown:
+            logging.info("Order blocked due to rate limiting.")
+            return  # Skip placing the order if within cooldown period
+
+        await self.cancel_all_orders() # TODO temporary
         for order in new_orders:
             exchange_order = {
                 "symbol": "ETH", # TODO temporary
@@ -50,10 +60,10 @@ class OMS():
                     }
                 }
             }
-            # await self.cancel_all_orders()
-            # self.exchange.place_order(exchange_order)
-            print(f"New Orders: {exchange_order}")
-        # pass
+            order = await self.exchange.place_order(exchange_order)
+            print(order)
+
+        self.last_order_time = current_time
 
     async def cancel_order(self, order: Dict[str, int]):
         await self.exchange.cancel_order(order)

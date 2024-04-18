@@ -3,6 +3,7 @@ import json
 import asyncio
 import logging
 import websockets
+import traceback
 
 from datetime import datetime, timedelta
 from enum import Enum
@@ -70,18 +71,16 @@ class WebsocketClient():
         retries = self.retries
         while self.ws_state != SocketState.EXITING and (retries > 0 or retries == 0):
             try:
-                # async with websockets.connect(self.url) as ws:
                 self.ws = await websockets.connect(self.url)
                 self.ws_state = SocketState.CONNECTED
                 self.retries = 0
                 if self.ws_state == SocketState.CONNECTED:
-                    asyncio.create_task(self._ping_loop())
-                    # if self.api_key and self.api_secret:
-                    #     await self._authenticate()
+                    if self._handle_read_loop:
+                        self._handle_read_loop.cancel()
+                        await self._handle_read_loop
+                        self._handle_read_loop = None
 
-                    # await self._after_connect()
-                    if not self._handle_read_loop:
-                        self._handle_read_loop = asyncio.create_task(self._read_loop())
+                    self._handle_read_loop = asyncio.create_task(self._read_loop())
                 return
             except Exception as e:
                 self.logger.error(f"WebSocket connection error: {e}")
@@ -138,17 +137,22 @@ class WebsocketClient():
             return None
 
     async def _read_loop(self):
-        while self.ws_state != SocketState.EXITING:
-            try:
+        try:
+            while self.ws_state != SocketState.EXITING:
                 message = await asyncio.wait_for(self.ws.recv(), timeout=self.TIMEOUT)
                 processed_message = self._handle_message(message)
                 if processed_message:
                     await self._queue.put(processed_message)
-            except websockets.exceptions.ConnectionClosed:
-                self.logger.info("WebSocket connection closed, attempting to reconnect.")
+        except websockets.exceptions.ConnectionClosed as e:
+            self.logger.info(f"WebSocket connection closed by server, reason: {e.reason}, code: {e.code}")
+            self.ws_state = SocketState.RECONNECTING
+        except asyncio.TimeoutError:
+            self.logger.warning("No message received in the last {} seconds".format(self.TIMEOUT))
+        except Exception as e:
+            self.logger.error(f"Unhandled error in read loop: {e}")
+        finally:
+            if self.ws_state != SocketState.EXITING:
                 await self._reconnect()
-            except asyncio.TimeoutError:
-                self.logger.warning("No message received in the last {} seconds".format(self.TIMEOUT))
 
     async def recv(self):
         res = None
