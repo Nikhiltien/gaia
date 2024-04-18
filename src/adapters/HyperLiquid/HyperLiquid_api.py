@@ -19,12 +19,12 @@ from src.adapters.ws_client import WebsocketClient
 class HyperLiquid(WebsocketClient, Adapter):
     def __init__(self, msg_callback=None, ws_name="HyperLiquid"):
         custom_callback = (self._handle_incoming_message)
-        url = "wss://api.hyperliquid-testnet.xyz/ws"
+        url = "wss://api.hyperliquid.xyz/ws"
         super().__init__(url=url, ws_name=ws_name, custom_callback=custom_callback)
 
         self._msg_loop = None
         self.headers = {"Content-Type": "application/json"}
-        self.base_url = 'https://api.hyperliquid-testnet.xyz'
+        self.base_url = 'https://api.hyperliquid.xyz'
 
         self._book_depth = None
 
@@ -64,7 +64,7 @@ class HyperLiquid(WebsocketClient, Adapter):
     async def connect(self, key, public, vault=None):
         super()._connect()
         threading.Thread(target=self.message_reading_loop).start()
-        address, info, exchange = self._setup(constants.TESTNET_API_URL, skip_ws=True, key=key, address=public)
+        address, info, exchange = self._setup(constants.MAINNET_API_URL, skip_ws=True, key=key, address=public)
 
         if exchange.account_address != exchange.wallet.address:
             raise Exception("You should not create an agent using an agent")
@@ -78,11 +78,11 @@ class HyperLiquid(WebsocketClient, Adapter):
         print("Running with agent address:", agent_account.address)
 
         if vault:
-            agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
                                       vault_address=vault)
             self.address = vault
         else:
-            agent_exchange = Exchange(wallet=agent_account, base_url=constants.TESTNET_API_URL, 
+            agent_exchange = Exchange(wallet=agent_account, base_url=constants.MAINNET_API_URL, 
                                       account_address=address)
             self.address = address
             

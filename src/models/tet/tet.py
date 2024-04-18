@@ -144,29 +144,34 @@ class Agent:
         bid_actions = torch.tensor(bid_actions, dtype=torch.long).unsqueeze(-1)
         ask_actions = torch.tensor(ask_actions, dtype=torch.long).unsqueeze(-1)
 
-        # Action selection from the primary network
-        _, ask_scores = self.model(states)  # Only need ask_scores for selecting actions
-        # Action evaluation from the target network
-        next_bid_scores, _ = self.model(next_states, model="target")  # Only need bid_scores for evaluating the action
+        # Gather scores for both bids and asks from primary network
+        bid_scores, ask_scores = self.model(states)
+        # Gather next scores from target network
+        next_bid_scores, next_ask_scores = self.model(next_states, model="target")
 
-        # Gather the maximum Q value for the next state from the target network
-        next_ask_q_values = next_bid_scores.max(1)[0].detach()
+        # Compute max Q-values for next states from target network for both actions
+        next_bid_q_values = next_bid_scores.max(1)[0].detach()
+        next_ask_q_values = next_ask_scores.max(1)[0].detach()
 
-        # Compute expected Q values based on selected actions from the target network
+        # Compute expected Q values based on selected actions
+        expected_bid_q_values = rewards + self.gamma * next_bid_q_values * (~dones)
         expected_ask_q_values = rewards + self.gamma * next_ask_q_values * (~dones)
 
         # Actual Q values from the current state using the primary network
+        bid_q_values = bid_scores.gather(1, bid_actions).squeeze(-1)
         ask_q_values = ask_scores.gather(1, ask_actions).squeeze(-1)
 
-        # Calculate loss
-        loss = self.loss_fn(ask_q_values, expected_ask_q_values)
+        # Calculate loss for both bid and ask actions
+        loss_bid = self.loss_fn(bid_q_values, expected_bid_q_values)
+        loss_ask = self.loss_fn(ask_q_values, expected_ask_q_values)
+        loss = loss_bid + loss_ask  # Combine losses if appropriate
 
         # Backpropagation
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # Periodically update the target network weights
+        # Update target network periodically
         if self.update_count % self.target_update == 0:
             self.model.update_target_network()
         self.update_count += 1

@@ -82,6 +82,7 @@ class WebsocketClient():
             if retries <= 0:
                 self.logger.error("Max retries exceeded, unable to connect.")
                 self.ws_state = SocketState.EXITING
+                self.stop()
 
     def disconnect(self):
         self.ws_state = SocketState.EXITING

@@ -84,11 +84,12 @@ class GameEnv(gym.Env):
             await asyncio.sleep(30)
 
     def step(self):
-        self.steps += 1
         current_state = self.get_current_state()
         action = self.agent.select_action(current_state)
         next_state, reward, done, info = self.apply_action(action)
-        
+
+        self.steps += 1
+
         # Accumulate reward
         self.cumulative_reward += reward
         
@@ -134,24 +135,15 @@ class GameEnv(gym.Env):
         return True
 
     def apply_action(self, action):
-        # Decode the normalized actions to actual market orders
         orders = self.decode_action(action)
-        
-        # Send orders to OMS
-        self.actions.place_orders(orders)
-        
         # The OMS executes orders and updates market state asynchronously
-        # Need to wait or poll for an update to market state
+        # Need to wait or poll for an update to market state in the future
+        if orders:
+            self.actions.place_orders(orders)
+
         next_state = self.get_current_state()
-        
-        # Calculate reward based on the action's market effect
         reward = self.calculate_reward()
-        # print(f'Reward calculated: {reward}')
-        
-        # Check if the trading conditions or other criteria end the episode
         done = self.check_if_done()
-        
-        # Additional info can be returned for debugging or logging purposes
         info = {'new_orders': orders}
         
         return next_state, reward, done, info
@@ -291,7 +283,12 @@ class GameEnv(gym.Env):
         max_bid_qty = (portfolio_value / mid_price) * (bid_qty_idx / 49)  # Normalize qty index
         max_ask_qty = (portfolio_value / mid_price) * (ask_qty_idx / 49)
         
-        orders = [('BUY', bid_price, max_bid_qty), ('SELL', ask_price, max_ask_qty)]
+        orders = []
+        if bid_qty_idx > 1:  # Skip bid order if qty index is 0
+            orders.append(('BUY', bid_price, max_bid_qty))
+        if ask_qty_idx > 1:  # Skip ask order if qty index is 0
+            orders.append(('SELL', ask_price, max_ask_qty))
+
         return self.format_orders(orders)
 
     def format_orders(self, orders):
