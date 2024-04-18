@@ -1,6 +1,7 @@
 import json
 import random
 import time
+import threading
 import asyncio
 import numpy as np
 
@@ -35,15 +36,11 @@ class HyperLiquid(WebsocketClient, Adapter):
         self.subscriptions = {}
         self.active_orders = {}
 
-    def start_msg_loop(self):
-        self._msg_loop = asyncio.create_task(self._read_msg_task())
-
-    async def _read_msg_task(self):
-        try:
-            while True:
-                await self.recv()
-        except asyncio.CancelledError:
-            pass
+    def message_reading_loop(self):
+        while True:
+            message = self.recv()
+            if message is None:
+                pass
     
     @staticmethod
     def _setup(base_url=None, skip_ws=False, key=None, address=None):
@@ -65,8 +62,8 @@ class HyperLiquid(WebsocketClient, Adapter):
         return address, info, exchange
 
     async def connect(self, key, public, vault=None):
-        await super()._connect()
-        self.start_msg_loop()
+        super()._connect()
+        threading.Thread(target=self.message_reading_loop).start()
         address, info, exchange = self._setup(constants.TESTNET_API_URL, skip_ws=True, key=key, address=public)
 
         if exchange.account_address != exchange.wallet.address:
@@ -166,7 +163,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         
         if self.ws:
             try:
-                await self.ws.send(subscription_message)
+                self.ws.send(subscription_message)
             except Exception as e:
                 self.logger.error(f"Error subscribing to {method} channel: {e}")
 
@@ -178,7 +175,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         unsubscribe_message = self._create_subscription_message("unsubscribe", params, req_id)
         if self.ws:
             try:
-                await self.ws.send(unsubscribe_message)
+                self.ws.send(unsubscribe_message)
             except Exception as e:
                 self.logger.error(f"Error unsubscribing from {channel} channel: {e}")
 

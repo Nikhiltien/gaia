@@ -19,7 +19,7 @@ class OMS():
 
         self.is_running = True
         self.last_order_time = 0
-        self.order_cooldown = 5 
+        self.order_cooldown = 1
 
         atexit.register(self.exit)
         signal.signal(signal.SIGTERM, self.exit)
@@ -61,7 +61,7 @@ class OMS():
                 }
             }
             order = await self.exchange.place_order(exchange_order)
-            # print(new_orders)
+            print(new_orders)
             # print(order)
 
         self.last_order_time = current_time
