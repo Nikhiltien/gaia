@@ -43,7 +43,7 @@ class OMS():
     async def place_orders(self, new_orders: List[Tuple[str, float, float]]):
         current_time = time.time()
         if current_time - self.last_order_time < self.order_cooldown:
-            logging.info("Order blocked due to rate limiting.")
+            logging.debug("Order blocked due to rate limiting.")
             return  # Skip placing the order if within cooldown period
 
         await self.cancel_all_orders() # TODO temporary
@@ -61,7 +61,7 @@ class OMS():
                 }
             }
             order = await self.exchange.place_order(exchange_order)
-            print(new_orders)
+            # print(new_orders)
             # print(order)
 
         self.last_order_time = current_time

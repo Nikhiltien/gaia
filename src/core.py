@@ -19,89 +19,6 @@ from typing import Dict
 from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
 
 
-
-order = {
-    "symbol": "ETH",
-    "side": "BUY",
-    "price": 3200.0,
-    "qty": 0.01,
-    "reduceOnly": False,
-    "orderType": {
-        "limit": {
-            "tif": "Gtc"
-        }
-    }
-}
-
-order2 = {
-    "symbol": "ETH",
-    "side": "SELL",
-    "price": 2800.0,
-    "qty": 0.01,
-    "reduceOnly": False,
-    "orderType": {
-        "limit": {
-            "tif": "Gtc"
-        }
-    }
-}
-
-order3 = {
-    "symbol": "ETH",
-    "side": "BUY",
-    "price": 2500.0,
-    "qty": 0.005,
-    "reduceOnly": False,
-    "orderType": {
-        "limit": {
-            "tif": "Gtc"
-        }
-    }
-}
-
-leverage = {
-    "leverage": 50,
-    "symbol": "ETH",
-    "is_cross": True
-}
-
-async def place_orders(adapter: HyperLiquid):
-
-    await asyncio.sleep(5)
-    order_result = await adapter.place_order(order_details=order3)
-    # logging.info(order_result)
-    await asyncio.sleep(5)
-    # await adapter.update_leverage(leverage_details=leverage)
-    await adapter.place_order(order_details=order)
-    # logging.info(resp)
-    await asyncio.sleep(65)
-    await adapter.place_order(order_details=order2)
-    # logging.info(resp2)
-
-    await asyncio.sleep(5)
-    cancel = None
-    order_status = None
-    if order_result["status"] == "ok":
-        status = order_result["response"]["data"]["statuses"][0]
-        if "resting" in status:
-            order_status = status["resting"]["oid"]
-
-            cancel = {
-                "symbol": "ETH",
-                "order_id": order_status
-            }
-
-    if cancel:
-        await adapter.cancel_order(order_details=cancel)
-        # logging.info(cancel_resp)
-
-    await adapter.place_order(order_details=order)
-    # logging.info(resp3)
-    await asyncio.sleep(55)
-    await adapter.place_order(order_details=order2)
-    # logging.info(resp4)
-
-
 class GAIA:
     def __init__(self, feed: Feed) -> None:
         self.logger = logging.getLogger(__name__)
@@ -133,7 +50,6 @@ class GAIA:
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
         await adapter.subscribe_all_symbol(self.feed.contracts)
-        # order_task = asyncio.create_task(place_orders(adapter))
 
         model = DDQN()
         try:

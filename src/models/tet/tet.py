@@ -37,49 +37,69 @@ class DDQN(nn.Module):
         # Primary network layers
         self.fc1 = nn.Linear(hidden_size, 128)
         self.fc2 = nn.Linear(128, 64)
-        self.fc3a = nn.Linear(64, action_dim)  # Output for asks
-        self.fc3b = nn.Linear(64, action_dim)  # Output for bids
+        # Separate value and advantage streams for bids and asks
+        self.value_stream_bid = nn.Linear(64, 1)
+        self.advantage_stream_bid = nn.Linear(64, action_dim)
+        self.value_stream_ask = nn.Linear(64, 1)
+        self.advantage_stream_ask = nn.Linear(64, action_dim)
 
         # Target network layers
         self.target_lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
         self.target_fc1 = nn.Linear(hidden_size, 128)
         self.target_fc2 = nn.Linear(128, 64)
-        self.target_fc3a = nn.Linear(64, action_dim)
-        self.target_fc3b = nn.Linear(64, action_dim)
+        self.target_value_stream_bid = nn.Linear(64, 1)
+        self.target_advantage_stream_bid = nn.Linear(64, action_dim)
+        self.target_value_stream_ask = nn.Linear(64, 1)
+        self.target_advantage_stream_ask = nn.Linear(64, action_dim)
+
+        self.optimizer = optim.Adam(self.parameters(), lr=lr, weight_decay=1e-5)
 
         # Initialize target network to be the same as the primary network
         self.update_target_network()
 
-        self.optimizer = optim.Adam(self.parameters(), lr, weight_decay=1e-5)  # Added L2 regularization
-    
     def forward(self, x, model="online"):
         if model == "online":
-            x, _ = self.lstm(x)  # Process input sequence
-            x = x[:, -1, :]  # Use the last output for decision making
+            x, _ = self.lstm(x)
+            x = x[:, -1, :]
             x = F.relu(self.fc1(x))
             x = F.relu(self.fc2(x))
-            bid_scores = self.fc3a(x)
-            ask_scores = self.fc3b(x)
-        else:  # using the target network
-            x, _ = self.target_lstm(x)  # Process input sequence
-            x = x[:, -1, :]  # Use the last output for decision making
+            
+            value_bid = self.value_stream_bid(x)
+            advantages_bid = self.advantage_stream_bid(x)
+            q_values_bid = value_bid + (advantages_bid - advantages_bid.mean(dim=1, keepdim=True))
+            
+            value_ask = self.value_stream_ask(x)
+            advantages_ask = self.advantage_stream_ask(x)
+            q_values_ask = value_ask + (advantages_ask - advantages_ask.mean(dim=1, keepdim=True))
+        else:
+            x, _ = self.target_lstm(x)
+            x = x[:, -1, :]
             x = F.relu(self.target_fc1(x))
             x = F.relu(self.target_fc2(x))
-            bid_scores = self.target_fc3a(x)
-            ask_scores = self.target_fc3b(x)
-        return bid_scores, ask_scores
+            
+            value_bid = self.target_value_stream_bid(x)
+            advantages_bid = self.target_advantage_stream_bid(x)
+            q_values_bid = value_bid + (advantages_bid - advantages_bid.mean(dim=1, keepdim=True))
+            
+            value_ask = self.target_value_stream_ask(x)
+            advantages_ask = self.target_advantage_stream_ask(x)
+            q_values_ask = value_ask + (advantages_ask - advantages_ask.mean(dim=1, keepdim=True))
+
+        return q_values_bid, q_values_ask
 
     def update_target_network(self):
-        # Explicitly copy the parameters from the primary network to the target network
+        # Copy parameters from the primary to the target network
         self.target_lstm.load_state_dict(self.lstm.state_dict())
         self.target_fc1.load_state_dict(self.fc1.state_dict())
         self.target_fc2.load_state_dict(self.fc2.state_dict())
-        self.target_fc3a.load_state_dict(self.fc3a.state_dict())
-        self.target_fc3b.load_state_dict(self.fc3b.state_dict())
+        self.target_value_stream_bid.load_state_dict(self.value_stream_bid.state_dict())
+        self.target_advantage_stream_bid.load_state_dict(self.advantage_stream_bid.state_dict())
+        self.target_value_stream_ask.load_state_dict(self.value_stream_ask.state_dict())
+        self.target_advantage_stream_ask.load_state_dict(self.advantage_stream_ask.state_dict())
 
 class Agent:
     def __init__(self, model: DDQN, target_update=10, gamma=0.99, epsilon=0.9, 
-                 epsilon_min=0.01, epsilon_decay=0.995, lr=0.001, batch_size=1):
+                 epsilon_min=0.01, epsilon_decay=0.995, lr=0.001, batch_size=32):
         self.model = model
         self.target_update = target_update
         self.update_count = 0
@@ -150,31 +170,3 @@ class Agent:
         if self.update_count % self.target_update == 0:
             self.model.update_target_network()
         self.update_count += 1
-
-
-class GRUTransformerModel(nn.Module):
-    def __init__(self, input_size=INPUT_DIM, hidden_size=128, num_layers=2, 
-                 num_heads=8, dim_feedforward=256, output_size=ORDER_BOOK_DIM):
-        super(GRUTransformerModel, self).__init__()
-        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dim_feedforward=dim_feedforward),
-            num_layers=num_layers
-        )
-        self.fc = nn.Linear(hidden_size, output_size)
-    
-    def forward(self, x, h0):
-        # GRU forward pass
-        gru_out, hn = self.gru(x, h0)
-        
-        # Transformer takes the output from the GRU
-        # Reshape the GRU output to (seq_len, batch, features) for Transformer
-        trans_input = gru_out.permute(1, 0, 2)
-        transformer_out = self.transformer(trans_input)
-        
-        # Taking the output from the last time step
-        final_feature_map = transformer_out[-1, :, :]
-        
-        # Passing through the final fully connected layer
-        output = self.fc(final_feature_map)
-        return output, hn
