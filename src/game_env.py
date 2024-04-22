@@ -91,15 +91,13 @@ class GameEnv(gym.Env):
         self.steps += 1
 
         # Accumulate reward
-        self.cumulative_reward += reward
+        # self.cumulative_reward += reward
         
-        # Check if the episode should end
         if done is True:
-            reward = self.cumulative_reward  # Use accumulated reward
+            reward = (self.calculate_pnl_1h() + self.calculate_unrealized_pnl()) * 100  # Use accumulated reward
             self.agent.remember(current_state, action, reward, next_state, done)
             self.agent.replay()
             logging.info(f"Episode complete - Total Reward: {reward}")
-            self.agent.epsilon = max(self.agent.epsilon * self.agent.epsilon_decay, self.agent.epsilon_min)
             torch.save(self.agent.model.state_dict(), 'src/models/tet/Tet.pth')
             self.reset()
         else:
@@ -110,24 +108,27 @@ class GameEnv(gym.Env):
         return next_state, reward, done, info
 
     def reset(self):
+        self.feed.reset()
+        self.agent.epsilon = max(self.agent.epsilon * self.agent.epsilon_decay, self.agent.epsilon_min)
         self.cumulative_reward = 0
         self.steps = 0
         self.state = RingBuffer(capacity=SEQUENCE_LENGTH, dtype=object)
         self.ready = False
         # return self.get_current_state()
 
-    def render(self):
-        pass
-
     def close(self):
         # TODO
         pass
 
     def calculate_reward(self):
-        profit_loss = self.calculate_unrealized_pnl() / 10
         penalty = 0
+        inventory = abs(self.get_inventory_value()[0])
+        if inventory > 50:
+            penalty = (inventory + 50) * -1
+        else:
+            penalty = 100
 
-        return profit_loss - penalty
+        return penalty # profit_loss - penalty
 
     def check_if_done(self):
         if self.steps <= 500:
@@ -145,6 +146,7 @@ class GameEnv(gym.Env):
         reward = self.calculate_reward()
         done = self.check_if_done()
         info = {'new_orders': orders}
+        # print(f"Reward: {reward}")
         
         return next_state, reward, done, info
 
@@ -216,27 +218,44 @@ class GameEnv(gym.Env):
 
     def get_current_state(self) -> np.ndarray:
         buffer_data = self.state._unwrap()
-        concatenated_datas = []
-        # Process each state snapshot in the buffer
-        for data in buffer_data:
-            # Unpack the tuple
-            orders, inventory, balance, timestep_data = data
+        all_flattened_data = []
+        normalize_indices = []  # List to store indices of columns to normalize
 
-            # Flatten individual arrays
+        for data in buffer_data:
+            orders, inventory, balance, timestep_data = data
             orders_flat = orders.flatten()
             inventory_flat = inventory.flatten()
 
-            # Process symbol-specific data - flatten each part (order_book, trades, klines)
             symbol_datasets = []
             for symbol_info in timestep_data:
-                for dataset in symbol_info:  # order_book, trades, klines
-                    symbol_datasets.append(dataset.flatten())
+                for i, dataset in enumerate(symbol_info):  # order_book, trades, klines
+                    flattened = dataset.flatten()
+                    if i == 2:  # klines dataset
+                        normalize_indices.extend([len(orders_flat) + len(inventory_flat) + len(balance) + j for j in [1, 2, 3, 4]])
+                    elif i == 1:  # trades dataset
+                        normalize_indices.extend([len(orders_flat) + len(inventory_flat) + len(balance) + j for j in [2, 5]])
+                    symbol_datasets.append(flattened)
             
             full_flat_array = np.concatenate([orders_flat, inventory_flat, balance] + symbol_datasets)
-            concatenated_datas.append(full_flat_array)
+            all_flattened_data.append(full_flat_array)
+            print(symbol_datasets)
 
-        # Convert the list of all timestep data into a numpy 2D array (sequence x features)
-        all_data = np.stack(concatenated_datas)
+        all_data = np.vstack(all_flattened_data)
+
+        # Normalize specific columns
+        normalize_indices = list(set(normalize_indices))  # Remove duplicates
+        data_to_normalize = all_data[:, normalize_indices]
+
+        # Calculate global mean and std for selected columns
+        global_means = data_to_normalize.mean(axis=0)
+        global_stds = data_to_normalize.std(axis=0)
+
+        # Replace zero std deviation with 1 to prevent division by zero
+        global_stds[global_stds == 0] = 1
+
+        # Normalize data
+        normalized_values = (data_to_normalize - global_means) / global_stds
+        all_data[:, normalize_indices] = normalized_values  # Update only selected columns
 
         return all_data
 
@@ -277,8 +296,8 @@ class GameEnv(gym.Env):
         portfolio_value = self.get_balance() + inventory_value / self.default_leverage
         
         mid_price = self.get_mid_price(self.feed.contracts[0]['symbol'])
-        bid_price = mid_price * (1 - 0.01 * bid_price_idx)  # 1% per level for simplicity
-        ask_price = mid_price * (1 + 0.01 * ask_price_idx)
+        bid_price = mid_price * (1 - 0.001 * bid_price_idx)  # 0.1% per level for simplicity
+        ask_price = mid_price * (1 + 0.001 * ask_price_idx)
         
         max_bid_qty = (portfolio_value / mid_price) * (bid_qty_idx / 49)  # Normalize qty index
         max_ask_qty = (portfolio_value / mid_price) * (ask_qty_idx / 49)
@@ -295,7 +314,7 @@ class GameEnv(gym.Env):
         return [
             {'side': side,
             'price': float(f"{price:.1f}"),  # Formats price to 1 decimal places
-            'qty': float(f"{qty:.4f}")}  # Formats qty to 4 decimal places
+            'qty': float(f"{qty:.2f}")}  # Formats qty to 2 decimal places
             for side, price, qty in orders
         ]
 
@@ -378,15 +397,11 @@ class GameEnv(gym.Env):
         return np.array([balance], dtype=float)
 
     def get_mid_price(self, symbol: str):
-        order_book_data = self.feed.order_books[symbol]._unwrap()[-1]
-        book = order_book_data[1]
+        prices = self.feed.klines[symbol]._unwrap()
+        if prices.size > 0:
+            last_price = prices[-1][4] 
 
-        best_bid_price, best_bid_volume = book[9, 0], book[9, 1]
-        best_ask_price, best_ask_volume = book[-10, 0], book[-10, 1]
-        
-        bba = np.array([[best_bid_price, best_bid_volume], [best_ask_price, best_ask_volume]])
-
-        return math.get_wmid(bba)
+        return last_price
 
     def calculate_unrealized_pnl(self) -> int:
         unrealized_pnl = 0.0

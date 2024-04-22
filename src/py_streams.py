@@ -90,29 +90,34 @@ class Inventory:
         await self.feed.update_balance((fee * -1) + pnl)
 
         symbol = fill['symbol']
-        qty = float(fill['qty'])
+        qty = float(fill['qty']) * (-1 if fill['side'] != 'B' else 1)
         price = float(fill['price'])
-        side = fill['side']
 
-        logging.info(f"Order filled: {symbol} {('BUY' if side == 'B' else 'SELL')} qty: {qty} price: {price}")
+        logging.info(f"Order filled: {symbol} {'BUY' if qty > 0 else 'SELL'} qty: {abs(qty)} price: {price}")
 
         if symbol not in self.feed.inventory:
             logging.error(f"Symbol not in contract list: {symbol}")
             return
-            # self.feed.inventory[symbol] = {'qty': 0, 'avg_price': 0, 'leverage': 0}
 
         current_qty = self.feed.inventory[symbol]['qty']
         current_avg_price = self.feed.inventory[symbol]['avg_price']
 
-        if side == 'B':  # Adjust for buy
+        # Initial position or closing a position triggers direct price update.
+        if current_qty == 0 or (current_qty + qty) == 0:
             updated_qty = current_qty + qty
-            if updated_qty != 0:
-                updated_avg_price = (current_avg_price * current_qty + price * qty) / updated_qty
-            else:
-                updated_avg_price = 0  # In case updated_qty results in zero
-        else:  # Adjust for sell
-            updated_qty = current_qty - qty
-            updated_avg_price = current_avg_price  # Average price remains unchanged for sell
+            updated_avg_price = price if updated_qty != 0 else 0
+        else:
+            # Transition from long to short, short to long, or increase in current position
+            if (current_qty > 0 and qty > 0) or (current_qty < 0 and qty < 0):  # Increasing position
+                updated_qty = current_qty + qty
+                updated_avg_price = ((current_avg_price * abs(current_qty)) + (price * abs(qty))) / abs(updated_qty)
+            elif abs(qty) > abs(current_qty):  # Flipping position
+                updated_qty = current_qty + qty
+                updated_avg_price = price  # New position flipped, use new price
+            else:  # Decreasing but not flipping
+                updated_qty = current_qty + qty
+                # Decrease doesn't change avg price, unless flipping which resets above
+                updated_avg_price = current_avg_price
 
         await self.feed.update_inventory(symbol, {
             'qty': updated_qty,

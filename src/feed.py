@@ -85,6 +85,10 @@ class Feed:
     def klines(self):
         return self._klines
 
+    def reset(self):
+        self._executions = deque(maxlen=100)
+        self.ready = False
+
     async def enqueue_symbol_update(self, symbol: str) -> None:
         if symbol not in self._queued_symbols:
             await self.queue.put(symbol)
@@ -112,8 +116,8 @@ class Feed:
         now = dt.datetime.now(dt.timezone.utc)
         balance = self.last_balance + cash_diff
         self._balances.append(np.array([now.timestamp(), balance]))
-        if abs(balance) > BALANCE_CHANGE_THRESHOLD:
-            await self.enqueue_symbol_update('Balance')
+        # if abs(balance) > BALANCE_CHANGE_THRESHOLD:
+        #     await self.enqueue_symbol_update('Balance')
 
     async def populate_balance_buffer(self, starting_balance: float) -> None:
         now = dt.datetime.now(dt.timezone.utc).timestamp()
@@ -147,7 +151,7 @@ class Feed:
             trade_array = (float(trade['timestamp']), side, float(trade['price']), float(trade['qty']))
             self._trades[symbol].append(trade_array)
        
-        await self.enqueue_symbol_update(symbol)
+        # await self.enqueue_symbol_update(symbol)
 
     async def add_trades_custom(self, trades: List[Dict]) -> None:
 

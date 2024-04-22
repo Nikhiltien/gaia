@@ -61,7 +61,7 @@ class OMS():
                 }
             }
             order = await self.exchange.place_order(exchange_order)
-            print(new_orders)
+            # print(new_orders)
             # print(order)
 
         self.last_order_time = current_time
