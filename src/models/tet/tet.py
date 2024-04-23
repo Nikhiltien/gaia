@@ -1,9 +1,11 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import random
+from random import randint
 from collections import deque
 
 SEQUENCE_LENGTH = 50
@@ -99,7 +101,7 @@ class DDQN(nn.Module):
 
 class Agent:
     def __init__(self, model: DDQN, target_update=10, gamma=0.99, epsilon=0.9, 
-                 epsilon_min=0.01, epsilon_decay=0.995, lr=0.001, batch_size=32):
+                 epsilon_min=0.01, epsilon_decay=0.695, lr=0.001, batch_size=32):
         self.model = model
         self.target_update = target_update
         self.update_count = 0
@@ -114,16 +116,14 @@ class Agent:
         self.loss_fn = nn.MSELoss()
 
     def select_action(self, state):
-        self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
-        
         if random.random() > self.epsilon:
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
             bid_scores, ask_scores = self.model(state_tensor)
             bid_action = bid_scores.argmax(1).item()
             ask_action = ask_scores.argmax(1).item()
         else:
-            bid_action = np.random.randint(0, 500)
-            ask_action = np.random.randint(0, 500)
+            bid_action = np.random.randint(0, 2)
+            ask_action = np.random.randint(0, 2)
         return bid_action, ask_action
 
     def remember(self, state, action, reward, next_state, done):
@@ -175,3 +175,76 @@ class Agent:
         if self.update_count % self.target_update == 0:
             self.model.update_target_network()
         self.update_count += 1
+
+
+def save_model(model, filepath):
+    torch.save(model.state_dict(), filepath)
+
+def load_model(model, filepath):
+    model.load_state_dict(torch.load(filepath))
+    model.train()  # Set model to evaluation mode
+
+def generate_data(num_samples):
+    sequences = np.random.randint(1, 100, size=(num_samples, 3, 1))  # More efficient generation
+    labels = []
+    for seq in sequences:
+        if np.all(seq[1:] > seq[:-1]):
+            labels.append(0)  # increasing
+        elif np.all(seq[1:] < seq[:-1]):
+            labels.append(1)  # decreasing
+        else:
+            labels.append(2)  # neither
+    data_tensor = torch.tensor(sequences, dtype=torch.float32)
+    labels_tensor = torch.tensor(labels, dtype=torch.long)
+    return data_tensor, labels_tensor
+
+def main():
+    num_samples = 980
+    data, labels = generate_data(num_samples)
+    num_episodes = 10
+    INPUT_DIM = 1
+    ACTION_DIM = 3
+
+    model_filepath = "test_model.pth"
+
+    # Load or initialize model
+    model = DDQN(input_dim=INPUT_DIM, action_dim=ACTION_DIM)
+    try:
+        load_model(model, model_filepath)
+        print("Model loaded successfully.")
+    except FileNotFoundError:
+        print("No model found. Initializing from scratch.")
+
+    # Setup the agent with the model
+    agent = Agent(model=model, target_update=10)
+
+    # Training phase
+    for episode in range(num_episodes):
+        agent.epsilon = max(agent.epsilon * agent.epsilon_decay, agent.epsilon_min)
+        for idx, (state, label) in enumerate(zip(data, labels)):
+            label = label.unsqueeze(0)
+            bid_action, _ = agent.select_action(state.numpy())
+            reward = 1.0 if bid_action == label.item() else -1.0
+            next_state = torch.tensor(np.random.randint(1, 100, size=(3, 1)), dtype=torch.float32)
+            done = idx == len(data) - 1
+            agent.remember(state.numpy(), (bid_action, 0), reward, next_state.numpy(), done)
+            agent.replay()
+
+        print(f"Episode {episode}, Epsilon: {agent.epsilon}")
+
+    # Save the trained model
+    save_model(agent.model, model_filepath)
+
+    # Loading model for evaluation
+    loaded_model = DDQN(input_dim=INPUT_DIM, action_dim=ACTION_DIM)
+    load_model(loaded_model, model_filepath)
+    agent.model = loaded_model  # replace the model in agent with the loaded model
+
+    # Testing the model
+    test_data, test_labels = generate_data(20)  # Generate fresh data for testing
+    for state, actual_label in zip(test_data, test_labels):
+        predicted_bid, _ = agent.select_action(state.numpy())
+        print(f"True label: {actual_label.item()}, Predicted: {predicted_bid}")
+
+if __name__ == "__main__":
+    main()

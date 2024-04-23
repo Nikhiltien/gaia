@@ -218,45 +218,27 @@ class GameEnv(gym.Env):
 
     def get_current_state(self) -> np.ndarray:
         buffer_data = self.state._unwrap()
-        all_flattened_data = []
-        normalize_indices = []  # List to store indices of columns to normalize
-
+        concatenated_datas = []
+        # Process each state snapshot in the buffer
         for data in buffer_data:
+            # Unpack the tuple
             orders, inventory, balance, timestep_data = data
+
+            # Flatten individual arrays
             orders_flat = orders.flatten()
             inventory_flat = inventory.flatten()
 
+            # Process symbol-specific data - flatten each part (order_book, trades, klines)
             symbol_datasets = []
             for symbol_info in timestep_data:
-                for i, dataset in enumerate(symbol_info):  # order_book, trades, klines
-                    flattened = dataset.flatten()
-                    if i == 2:  # klines dataset
-                        normalize_indices.extend([len(orders_flat) + len(inventory_flat) + len(balance) + j for j in [1, 2, 3, 4]])
-                    elif i == 1:  # trades dataset
-                        normalize_indices.extend([len(orders_flat) + len(inventory_flat) + len(balance) + j for j in [2, 5]])
-                    symbol_datasets.append(flattened)
-            
+                for dataset in symbol_info:  # order_book, trades, klines
+                    symbol_datasets.append(dataset.flatten())
+
             full_flat_array = np.concatenate([orders_flat, inventory_flat, balance] + symbol_datasets)
-            all_flattened_data.append(full_flat_array)
-            print(symbol_datasets)
+            concatenated_datas.append(full_flat_array)
 
-        all_data = np.vstack(all_flattened_data)
-
-        # Normalize specific columns
-        normalize_indices = list(set(normalize_indices))  # Remove duplicates
-        data_to_normalize = all_data[:, normalize_indices]
-
-        # Calculate global mean and std for selected columns
-        global_means = data_to_normalize.mean(axis=0)
-        global_stds = data_to_normalize.std(axis=0)
-
-        # Replace zero std deviation with 1 to prevent division by zero
-        global_stds[global_stds == 0] = 1
-
-        # Normalize data
-        normalized_values = (data_to_normalize - global_means) / global_stds
-        all_data[:, normalize_indices] = normalized_values  # Update only selected columns
-
+        # Convert the list of all timestep data into a numpy 2D array (sequence x features)
+        all_data = np.stack(concatenated_datas)
         return all_data
 
     async def _process_update(self):
