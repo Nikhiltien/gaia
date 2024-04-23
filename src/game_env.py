@@ -18,7 +18,7 @@ from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 
 MAX_ORDERS = 20
-SEQUENCE_LENGTH = 50
+SEQUENCE_LENGTH = 3
 MIN_BUFFER_SIZE = 2
 
 
@@ -240,6 +240,7 @@ class GameEnv(gym.Env):
 
         # Convert the list of all timestep data into a numpy 2D array (sequence x features)
         all_data = np.stack(concatenated_datas)
+        print(all_data)
         return all_data
 
     async def _process_update(self):

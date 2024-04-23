@@ -390,13 +390,13 @@ class HyperLiquid(WebsocketClient, Adapter):
             }
         await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
-    async def subscribe_all_symbol(self, contracts: List):
+    async def subscribe_all_symbol(self, contracts: List, num_levels: float = None, interval: str = "1m"):
         tasks = []
 
         for contract in contracts:
-            tasks.append(asyncio.create_task(self.subscribe_order_book(contract)))
+            tasks.append(asyncio.create_task(self.subscribe_order_book(contract, num_levels=num_levels)))
             tasks.append(asyncio.create_task(self.subscribe_trades(contract)))
-            tasks.append(asyncio.create_task(self.subscribe_klines(contract)))
+            tasks.append(asyncio.create_task(self.subscribe_klines(contract, interval=interval)))
 
         await asyncio.gather(*tasks)
 

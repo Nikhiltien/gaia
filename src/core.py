@@ -49,7 +49,7 @@ class GAIA:
 
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
-        await adapter.subscribe_all_symbol(self.feed.contracts)
+        await adapter.subscribe_all_symbol(contracts=self.feed.contracts, num_levels=self.feed.max_depth)
 
         model = DDQN()
         try:
