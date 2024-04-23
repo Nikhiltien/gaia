@@ -6,7 +6,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium.spaces import Box, Dict, Discrete, MultiDiscrete, Tuple as gymTuple
 
-from src.models.tet.tet import DDQN, Agent
+from src.models.tet.tet import Agent
 from datetime import datetime, timedelta
 from typing import List, Tuple
 from numpy.typing import NDArray
@@ -19,7 +19,7 @@ from src.zeromq.zeromq import DealerSocket, PublisherSocket
 
 MAX_ORDERS = 20
 SEQUENCE_LENGTH = 50
-MIN_BUFFER_SIZE = 1
+MIN_BUFFER_SIZE = 2
 
 
 class GameEnv(gym.Env):
@@ -94,6 +94,7 @@ class GameEnv(gym.Env):
         # self.cumulative_reward += reward
         
         if done is True:
+            self.agent.epsilon = max(self.agent.epsilon * self.agent.epsilon_decay, self.agent.epsilon_min)
             reward = (self.calculate_pnl_1h() + self.calculate_unrealized_pnl()) * 100  # Use accumulated reward
             self.agent.remember(current_state, action, reward, next_state, done)
             self.agent.replay()
@@ -173,8 +174,8 @@ class GameEnv(gym.Env):
                     self.feed.ready = True
                     print("Feed is ready!")
                 else:
-                    # print(f"~{SEQUENCE_LENGTH - length} minutes until GameEnv is ready.")
-                    await asyncio.sleep(30)  # Wait and then check again.
+                    print("Waiting for Ring Buffers to fill...")
+                    await asyncio.sleep(30)
                     continue
             
             if not self.ready:
@@ -224,14 +225,14 @@ class GameEnv(gym.Env):
             # Unpack the tuple
             orders, inventory, balance, timestep_data = data
 
-            # Flatten individual arrays
+            # Flatten individual arrays (balance does not need to be flattened)
             orders_flat = orders.flatten()
             inventory_flat = inventory.flatten()
 
             # Process symbol-specific data - flatten each part (order_book, trades, klines)
             symbol_datasets = []
             for symbol_info in timestep_data:
-                for dataset in symbol_info:  # order_book, trades, klines
+                for dataset in symbol_info:  # timestamp, order_book, trades, klines
                     symbol_datasets.append(dataset.flatten())
 
             full_flat_array = np.concatenate([orders_flat, inventory_flat, balance] + symbol_datasets)
@@ -266,8 +267,8 @@ class GameEnv(gym.Env):
             trade_data = np.zeros_like(trade_data)
             # Align timestamps
             trade_data[0] = order_book_data[0]
-        
-        return (order_book_data[1], trade_data, klines_data)
+
+        return (trade_data[0], order_book_data[1], trade_data[1:], klines_data[1:])
 
     def decode_action(self, action):
         bid_action, ask_action = action

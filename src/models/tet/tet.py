@@ -14,15 +14,16 @@ SYMBOLS = 1
 MAX_DEPTH = 10
 MAX_ORDERS = MAX_DEPTH * 2 * SYMBOLS
 
+TIMESTAMP = 1
 ORDER_BOOK_DIM = MAX_DEPTH * 2 * 2
-TRADES_DIM = 7
-KLINES_DIM = 6
+TRADES_DIM = 6
+KLINES_DIM = 5
 
 ORDERS_DIM = MAX_ORDERS * 3 
 INVENTORY_DIM = SYMBOLS * 3
 BALANCES_DIM = 1
 
-SYMBOLS_DATA_DIM = SYMBOLS * ORDER_BOOK_DIM + TRADES_DIM + KLINES_DIM
+SYMBOLS_DATA_DIM = SYMBOLS * (TIMESTAMP + ORDER_BOOK_DIM + TRADES_DIM + KLINES_DIM)
 
 INPUT_DIM = ORDERS_DIM + INVENTORY_DIM + BALANCES_DIM + SYMBOLS_DATA_DIM
 
@@ -122,8 +123,8 @@ class Agent:
             bid_action = bid_scores.argmax(1).item()
             ask_action = ask_scores.argmax(1).item()
         else:
-            bid_action = np.random.randint(0, 2)
-            ask_action = np.random.randint(0, 2)
+            bid_action = np.random.randint(0, 500)
+            ask_action = np.random.randint(0, 500)
         return bid_action, ask_action
 
     def remember(self, state, action, reward, next_state, done):
@@ -184,67 +185,67 @@ def load_model(model, filepath):
     model.load_state_dict(torch.load(filepath))
     model.train()  # Set model to evaluation mode
 
-def generate_data(num_samples):
-    sequences = np.random.randint(1, 100, size=(num_samples, 3, 1))  # More efficient generation
-    labels = []
-    for seq in sequences:
-        if np.all(seq[1:] > seq[:-1]):
-            labels.append(0)  # increasing
-        elif np.all(seq[1:] < seq[:-1]):
-            labels.append(1)  # decreasing
-        else:
-            labels.append(2)  # neither
-    data_tensor = torch.tensor(sequences, dtype=torch.float32)
-    labels_tensor = torch.tensor(labels, dtype=torch.long)
-    return data_tensor, labels_tensor
+# def generate_data(num_samples):
+#     sequences = np.random.randint(1, 100, size=(num_samples, 3, 1))  # More efficient generation
+#     labels = []
+#     for seq in sequences:
+#         if np.all(seq[1:] > seq[:-1]):
+#             labels.append(0)  # increasing
+#         elif np.all(seq[1:] < seq[:-1]):
+#             labels.append(1)  # decreasing
+#         else:
+#             labels.append(2)  # neither
+#     data_tensor = torch.tensor(sequences, dtype=torch.float32)
+#     labels_tensor = torch.tensor(labels, dtype=torch.long)
+#     return data_tensor, labels_tensor
 
-def main():
-    num_samples = 980
-    data, labels = generate_data(num_samples)
-    num_episodes = 10
-    INPUT_DIM = 1
-    ACTION_DIM = 3
+# def main():
+#     num_samples = 980
+#     data, labels = generate_data(num_samples)
+#     num_episodes = 3
+#     INPUT_DIM = 1
+#     ACTION_DIM = 3
 
-    model_filepath = "test_model.pth"
+#     model_filepath = "test_model.pth"
 
-    # Load or initialize model
-    model = DDQN(input_dim=INPUT_DIM, action_dim=ACTION_DIM)
-    try:
-        load_model(model, model_filepath)
-        print("Model loaded successfully.")
-    except FileNotFoundError:
-        print("No model found. Initializing from scratch.")
+#     # Load or initialize model
+#     model = DDQN(input_dim=INPUT_DIM, action_dim=ACTION_DIM)
+#     try:
+#         load_model(model, model_filepath)
+#         print("Model loaded successfully.")
+#     except FileNotFoundError:
+#         print("No model found. Initializing from scratch.")
 
-    # Setup the agent with the model
-    agent = Agent(model=model, target_update=10)
+#     # Setup the agent with the model
+#     agent = Agent(model=model, target_update=10)
 
-    # Training phase
-    for episode in range(num_episodes):
-        agent.epsilon = max(agent.epsilon * agent.epsilon_decay, agent.epsilon_min)
-        for idx, (state, label) in enumerate(zip(data, labels)):
-            label = label.unsqueeze(0)
-            bid_action, _ = agent.select_action(state.numpy())
-            reward = 1.0 if bid_action == label.item() else -1.0
-            next_state = torch.tensor(np.random.randint(1, 100, size=(3, 1)), dtype=torch.float32)
-            done = idx == len(data) - 1
-            agent.remember(state.numpy(), (bid_action, 0), reward, next_state.numpy(), done)
-            agent.replay()
+#     # Training phase
+#     for episode in range(num_episodes):
+#         agent.epsilon = max(agent.epsilon * agent.epsilon_decay, agent.epsilon_min)
+#         for idx, (state, label) in enumerate(zip(data, labels)):
+#             label = label.unsqueeze(0)
+#             bid_action, _ = agent.select_action(state.numpy())
+#             reward = 1.0 if bid_action == label.item() else -1.0
+#             next_state = torch.tensor(np.random.randint(1, 100, size=(3, 1)), dtype=torch.float32)
+#             done = idx == len(data) - 1
+#             agent.remember(state.numpy(), (bid_action, 0), reward, next_state.numpy(), done)
+#             agent.replay()
 
-        print(f"Episode {episode}, Epsilon: {agent.epsilon}")
+#         print(f"Episode {episode}, Epsilon: {agent.epsilon}")
 
-    # Save the trained model
-    save_model(agent.model, model_filepath)
+#     # Save the trained model
+#     save_model(agent.model, model_filepath)
 
-    # Loading model for evaluation
-    loaded_model = DDQN(input_dim=INPUT_DIM, action_dim=ACTION_DIM)
-    load_model(loaded_model, model_filepath)
-    agent.model = loaded_model  # replace the model in agent with the loaded model
+#     # Loading model for evaluation
+#     loaded_model = DDQN(input_dim=INPUT_DIM, action_dim=ACTION_DIM)
+#     load_model(loaded_model, model_filepath)
+#     agent.model = loaded_model  # replace the model in agent with the loaded model
 
-    # Testing the model
-    test_data, test_labels = generate_data(20)  # Generate fresh data for testing
-    for state, actual_label in zip(test_data, test_labels):
-        predicted_bid, _ = agent.select_action(state.numpy())
-        print(f"True label: {actual_label.item()}, Predicted: {predicted_bid}")
+#     # Testing the model
+#     test_data, test_labels = generate_data(20)  # Generate fresh data for testing
+#     for state, actual_label in zip(test_data, test_labels):
+#         predicted_bid, _ = agent.select_action(state.numpy())
+#         print(f"True label: {actual_label.item()}, Predicted: {predicted_bid}")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
