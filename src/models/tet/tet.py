@@ -102,7 +102,7 @@ class DDQN(nn.Module):
 
 class Agent:
     def __init__(self, model: DDQN, target_update=10, gamma=0.99, epsilon=0.9, 
-                 epsilon_min=0.01, epsilon_decay=0.695, lr=0.001, batch_size=32):
+                 epsilon_min=0.01, epsilon_decay=0.695, lr=0.001, batch_size=64):
         self.model = model
         self.target_update = target_update
         self.update_count = 0

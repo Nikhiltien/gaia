@@ -41,8 +41,8 @@ class GameEnv(gym.Env):
             'inventory': Box(low=-np.inf, high=np.inf, shape=(len(self.feed.contracts), 3), dtype=np.float32),
             'balances': Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32),
             'order_books': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, self.max_depth * 4), dtype=np.float32),
-            'trades': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 7), dtype=np.float32),
-            'klines': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 6), dtype=np.float32),
+            'trades': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 6), dtype=np.float32),
+            'klines': Box(low=-np.inf, high=np.inf, shape=(SEQUENCE_LENGTH, 5), dtype=np.float32),
         })
 
         self.actions = GameActions(send_socket)
@@ -240,7 +240,7 @@ class GameEnv(gym.Env):
 
         # Convert the list of all timestep data into a numpy 2D array (sequence x features)
         all_data = np.stack(concatenated_datas)
-        print(all_data)
+
         return all_data
 
     async def _process_update(self):
