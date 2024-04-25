@@ -35,7 +35,7 @@ def bbw(klines: NDArray, length: int, multiplier: float) -> float:
         The width of the Bollinger Bands for the given parameters.
     """
 
-    closes = klines[:, 3]
+    closes = klines[:, 4]
     dev = multiplier * np.std(closes[-length:])
     return 2 * dev 
 

@@ -22,10 +22,11 @@ from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
 
 
 class GAIA:
-    def __init__(self, feed: Feed) -> None:
+    def __init__(self, feed: Feed, console=False) -> None:
         self.logger = logging.getLogger(__name__)
 
         self.feed = feed
+        self.console = console
         # self.api_manager = APIManager()
 
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
@@ -33,9 +34,8 @@ class GAIA:
         atexit.register(self.exit)
         signal.signal(signal.SIGTERM, self.exit)
 
-    async def run(self, console=False) -> None:
+    async def run(self) -> None:
 
-        config = await self.load_config()
         env_path = os.path.expanduser('~/gaia/keys/private_key.env')
         load_dotenv(dotenv_path=env_path)
 
@@ -49,9 +49,6 @@ class GAIA:
         recv_socket = zmq.create_subscriber(port=50000, name="")
         pub_socket = zmq.create_publisher(port=50000)
 
-        database = PGDatabase(config=config)
-        await database.start()
-
         # adapter = await self.api_manager.load('HYPERLIQUID')
 
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
@@ -61,14 +58,14 @@ class GAIA:
         model = DDQN()
         try:
             model.load_state_dict(torch.load('src/models/tet/Tet.pth'))
-            self.logger.info("Loaded model weights succesfully.")
+            self.logger.info("Loaded model succesfully.")
         except FileNotFoundError:
             self.logger.info("No previous model found, starting new model.")
         agent = Agent(model)
 
         self.logger.info(f"Waiting for ready signal...")
         await self._wait_for_confirmation()
-        self.logger.info(f"Signal received, starting strategy...")
+        self.logger.info(f"Signal received, starting Gaia...")
 
         tasks = [
             asyncio.create_task(Streams(self.feed, recv_socket).start()),
@@ -78,18 +75,13 @@ class GAIA:
             # asyncio.create_task(APIManager().start()),
             ]
         
-        if console: 
+        if self.console: 
             tasks.append(asyncio.create_task(Console().start()))
 
         await asyncio.gather(*tasks)
 
     def exit(self) -> None:
         pass
-
-    async def load_config(self, path: str = 'etc/config.yml') -> Dict:
-        with open(path, "r") as f:
-            config = yaml.safe_load(f)
-            return config
 
     async def _wait_for_confirmation(self) -> None:
         while True:
@@ -124,3 +116,8 @@ class GAIA:
 
         logging.info("Training completed.")
         torch.save(agent.model.state_dict(), 'models/tet/Tet.pth')
+
+def load_config(path: str = 'etc/config.yml') -> Dict:
+    with open(path, "r") as f:
+        config = yaml.safe_load(f)
+        return config

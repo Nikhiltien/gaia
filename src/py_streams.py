@@ -184,7 +184,6 @@ class Trades:
         self.feed = feed
 
     async def update_trades(self, update: List[Dict]) -> None:
-
         await self.feed.add_trades_custom(update)
 
 

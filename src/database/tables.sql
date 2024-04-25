@@ -77,12 +77,12 @@ CREATE INDEX idx_positions_contract_id ON Positions(contract_id);
 -- HistoricalData Table
 CREATE TABLE HistoricalData (
     contract_id INT REFERENCES Contracts(id),
-    open NUMERIC,
-    high NUMERIC,
-    low NUMERIC,
+    open NUMERIC NOT NULL,
+    high NUMERIC NOT NULL,
+    low NUMERIC NOT NULL,
     close NUMERIC NOT NULL,
-    spread NUMERIC,
     volume NUMERIC NOT NULL,
+    spread NUMERIC,
     open_interest INT,
     greeks JSON,
     timestamp BIGINT NOT NULL,
@@ -94,10 +94,10 @@ CREATE INDEX idx_historicaldata_contract_id ON HistoricalData(contract_id);
 
 -- MarketTrades Table
 CREATE TABLE MarketTrades (
-    trade_id INT NOT NULL,
+    trade_id BIGINT NOT NULL,
     contract_id INT REFERENCES Contracts(id),
     order_type order_type_enum,
-    side side_enum,
+    side FLOAT,
     qty NUMERIC NOT NULL,
     price NUMERIC NOT NULL,
     timestamp BIGINT NOT NULL,

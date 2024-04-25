@@ -7,11 +7,18 @@ from typing import List, Dict, Set
 from numpy.typing import NDArray
 from collections import deque
 from numpy_ringbuffer import RingBuffer
+from src.database.db_manager import PGDatabase
 
 
 BUFFER_SIZE = 200
 BALANCE_CHANGE_THRESHOLD = 0.05
 
+contract = {
+    "symbol": "ETH",
+    "secType": "PERP",
+    "exchange": "HYPERLIQUID",
+    "currency": "USD"
+    }
 
 class InventoryField(Enum):
     QUANTITY = 'qty'
@@ -21,8 +28,10 @@ class InventoryField(Enum):
 
 
 class Feed:
-    def __init__(self, contracts: List = None, max_depth=100, margin=True) -> None:
+    def __init__(self, database: PGDatabase = None, contracts: List = None, 
+                 max_depth=100, margin=True) -> None:
 
+        self.db = database
         self.queue = asyncio.Queue()
         self._queued_symbols: Set[str] = set()
 
@@ -140,9 +149,12 @@ class Feed:
     def add_execution(self, execution: List) -> None:
         self.executions.append(execution)
 
-    async def add_orderbook_snapshot(self, symbol: str, book: NDArray) -> None:
+    async def add_orderbook_snapshot(self, symbol: str, book: NDArray) -> None:            
         self._order_books[symbol].append(book)
         await self.enqueue_symbol_update(symbol)
+
+        if self.db:
+            await self.db.store_order_book_data(book, contract)
 
     async def add_trades(self, trades: List[Dict]) -> None:
         for trade in trades:
@@ -150,11 +162,13 @@ class Feed:
             side = trade['side']
             trade_array = (float(trade['timestamp']), side, float(trade['price']), float(trade['qty']))
             self._trades[symbol].append(trade_array)
+
+        if self.db:
+            await self.db.store_trade_data(trades, contract)
        
         # await self.enqueue_symbol_update(symbol)
 
     async def add_trades_custom(self, trades: List[Dict]) -> None:
-
         symbol = trades[0]['symbol']
         timestamp = float(trades[0]['timestamp'])
 
@@ -186,14 +200,26 @@ class Feed:
 
         # Append to the ring buffer
         self._trades[symbol].append(aggregated_trade_data)
-
         # await self.enqueue_symbol_update(symbol)
 
+        if self.db:
+            await self.db.store_trade_data(trades, contract)
+
     async def add_kline(self, symbol: str, kline: NDArray) -> None:
-        unwrapped_data = self._klines[symbol]._unwrap()
-        if unwrapped_data.size > 0 and unwrapped_data[-1][0] == kline[0]:
-            self._klines[symbol].pop()
+        unwrapped = self._klines[symbol]._unwrap()
+        last_kline_exists = unwrapped.size > 0  # Check if there are any klines
+
+        # Check if the last kline should be replaced
+        if last_kline_exists and unwrapped[-1][0] == kline[0]:
+            self._klines[symbol].pop()  # Remove the last kline if it has the same timestamp
+            store = False
+        else:
+            store = True
+
         self._klines[symbol].append(kline)
+
+        if store and self.db:
+            await self.db.store_klines_data(kline, contract)
 
         # Enqueuing symbol is unnecessary for Trades as Klines update per trade
         # await self.enqueue_symbol_update(symbol)

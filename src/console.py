@@ -208,6 +208,7 @@ class Console(QMainWindow):
         self.add_dock_widget("Systems", QWidget())
 
     def start():
+        print("-- Placeholder --")
         pass
 
     def add_dock_widget(self, title, widget):
@@ -287,21 +288,19 @@ stylesheet = """
 zmq_subscriber = None # SubscriberSocket(address="tcp://localhost:5556")
 contract_id = 603558814
 
-# if __name__ == '__main__':
-#     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-#     app = QApplication(sys.argv)
-#     loop = QEventLoop(app)
-#     asyncio.set_event_loop(loop)
+def start():
+    app = QApplication(sys.argv)
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
     
-#     def quit_application():
-#         loop.stop()
+    def quit_application():
+        loop.stop()
 
-#     app.aboutToQuit.connect(quit_application)
-#     app.setStyleSheet(stylesheet)
+    app.aboutToQuit.connect(quit_application)
+    app.setStyleSheet(stylesheet)
 
-#     with loop:
-#         mainWin = Console()
-#         mainWin.show()
-#         loop.run_forever()
-#     sys.exit(0)
+    with loop:
+        mainWin = Console()
+        mainWin.show()
+        loop.run_forever()
+    sys.exit(0)

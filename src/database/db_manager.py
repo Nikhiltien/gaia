@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from asyncpg.pool import Pool
 from contextlib import asynccontextmanager
-from typing import Optional, List, Any, Tuple
+from typing import Optional, List, Any, Tuple, Dict
 
 class PGDatabase:
     def __init__(self, min_size: int = 5, max_size: int = 25, config=None, **kwargs):
@@ -152,7 +152,7 @@ class PGDatabase:
                 # **self.config
                 # Other parameters as needed
             )
-            self.logger.info("Postgres connection started.")
+            self.logger.info("Connected to PostgresDB.")
         except Exception as e:
             self.logger.error(f"Error initiating Postgres connection pool: {e}")
             raise e
@@ -215,7 +215,7 @@ class PGDatabase:
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, *args, timeout=timeout)
 
-    async def insert_contract(self, contract: dict):
+    async def insert_contract(self, contract: Dict):
         symbol_parts = contract['symbol'].split('/')
         if len(symbol_parts) == 2:
             # If the symbol contains '/', split into symbol and currency.
@@ -241,48 +241,52 @@ class PGDatabase:
                 symbol, contract['exchange']
             )
 
-    async def store_trade_data(self, trades: pd.DataFrame, contract: dict):
+    async def store_trade_data(self, trades: List[Dict], contract: Dict):
         contract_id = await self.insert_contract(contract)
 
         if contract_id:
             trades_records = []
-            for index, row in trades.iterrows():
-                # Create a hash trade_id if it's not present
-                hash_input_str = f"{row.get('order_type', '')}{row.get('side', '')}{row.qty}{row.price}{row.timestamp.timestamp()}"
-                trade_id = int(hashlib.sha256(hash_input_str.encode()).hexdigest(), 16) & ((1 << 31) - 1)
+            for trade in trades:
+                trade_id = trade.get('trade_id', 0)
+                side = trade.get('side')
+                qty = trade.get('qty')
+                price = trade.get('price')
+                timestamp = int(trade.get('timestamp'))
                 
                 trades_records.append(
-                    (trade_id, contract_id, row.get('order_type'), row.get('side'), row.qty, row.price, int(row.timestamp.timestamp() * 1_000_000))
+                    (trade_id, contract_id, side, qty, price, timestamp)
                 )
 
             async with self.pool.acquire() as conn:
                 await conn.executemany(
                     """
-                    INSERT INTO MarketTrades (trade_id, contract_id, order_type, side, qty, price, timestamp)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    INSERT INTO MarketTrades (trade_id, contract_id, side, qty, price, timestamp)
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT DO NOTHING
                     """,
                     trades_records
                 )
-            self.logger.info("Successfully stored trade data.")
+            self.logger.debug(f"Successfully stored trade data for {contract}.")
         else:
             self.logger.error("Failed to store trade data due to missing contract ID.")
 
-    async def store_order_book_data(self, order_books: pd.DataFrame, contract: dict):
+    async def store_order_book_data(self, book: np.ndarray, contract: Dict):
         contract_id = await self.insert_contract(contract)
 
         if contract_id:
-            order_book_records = []
-            for index, row in order_books.iterrows():
-                # Filter out NaN values from bids and asks and serialize
-                timestamp = int(row.name.timestamp() * 1_000)
-                bids = {col.split(':')[1]: row[col] for col in order_books.columns if col.startswith('bid') and not np.isnan(row[col])}
-                asks = {col.split(':')[1]: row[col] for col in order_books.columns if col.startswith('ask') and not np.isnan(row[col])}
-                bids_json = json.dumps(bids)
-                asks_json = json.dumps(asks)
+            timestamp, snapshot = book['timestamp'], book['data']  # Access by field name
 
-                order_book_records.append((contract_id, bids_json, asks_json, timestamp))
+            midpoint = len(snapshot) // 2
+            bids = snapshot[:midpoint]
+            asks = snapshot[midpoint:]
+            
+            bids_list = [(float(price), float(qty)) for price, qty in bids]
+            asks_list = [(float(price), float(qty)) for price, qty in asks]
+            bids_json = json.dumps(bids_list)
+            asks_json = json.dumps(asks_list)
 
+            order_book_records = [(contract_id, bids_json, asks_json, int(timestamp))]
+            
             async with self.pool.acquire() as conn:
                 await conn.executemany(
                     """
@@ -292,6 +296,25 @@ class PGDatabase:
                     """,
                     order_book_records
                 )
-            self.logger.info("Successfully stored order book data.")
+            self.logger.debug(f"Successfully stored order book data for {contract}.")
         else:
             self.logger.error("Failed to store order book data due to missing contract ID.")
+
+    async def store_klines_data(self, ohlc_data: np.ndarray, contract: dict):
+        contract_id = await self.insert_contract(contract)
+
+        if contract_id:
+            timestamp, open_price, high, low, close, volume = ohlc_data[:6]
+
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO HistoricalData (contract_id, open, high, low, close, volume, timestamp)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (contract_id, timestamp) DO NOTHING
+                    """,
+                    contract_id, open_price, high, low, close, volume, timestamp
+                )
+            self.logger.debug(f"Successfully stored OHLC data for contract {contract}.")
+        else:
+            self.logger.error("Failed to obtain contract ID for storing OHLC data.")

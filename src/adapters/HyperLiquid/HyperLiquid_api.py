@@ -62,7 +62,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         return address, info, exchange
 
     async def connect(self, key, public, vault=None):
-        super()._connect()
+        super().connect()
         threading.Thread(target=self.message_reading_loop).start()
         address, info, exchange = self._setup(constants.MAINNET_API_URL, skip_ws=True, key=key, address=public)
 
@@ -93,7 +93,7 @@ class HyperLiquid(WebsocketClient, Adapter):
         asyncio.create_task(self.subscribe_all_user(interval=60))
 
     def disconnect(self):
-        super()._disconnect()
+        super().disconnect()
 
     def _handle_incoming_message(self, message):
         channel = message.get('channel')

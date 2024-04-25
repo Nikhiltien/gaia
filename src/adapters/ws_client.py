@@ -66,7 +66,7 @@ class WebsocketClient():
     #             if self.ws_state != SocketState.EXITING:
     #                 await self._reconnect()
 
-    def _connect(self):
+    def connect(self):
         self.ws_state = SocketState.INITIALIZING
         retries = self.MAX_RECONNECTS
         while self.keep_running and retries > 0:
