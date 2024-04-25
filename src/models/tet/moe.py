@@ -28,8 +28,7 @@ class SegmentGatingNetwork(nn.Module):
         self.segment_gate = nn.Conv1d(in_channels=num_features, out_channels=num_experts, kernel_size=5, stride=5, padding=0)
 
     def forward(self, x):
-        # x shape: [batch, features, sequence_length]
-        x = x.permute(0, 2, 1)  # IMPORTANT: adjust to [batch, sequence_length, features] for Conv1d
+        x = x.permute(0, 2, 1)
         segmented_gates = self.segment_gate(x)  # Apply convolutions along temporal dimension: [batch, experts, segments]
         return F.softmax(segmented_gates, dim=1)  # Softmax over experts dimension for each segment
 
@@ -44,9 +43,10 @@ class CNNExpert(nn.Module):
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=2, stride=2)
         )
-        self.fc_layer = nn.Linear(64 * 7, 100)  # Adjust output size calculation as necessary
+        self.fc_layer = nn.Linear(64 * 12, 100)  # Adjust output size calculation as necessary
 
     def forward(self, x):
+        x = x.permute(0, 2, 1)
         x = self.conv_layers(x)
         x = torch.flatten(x, 1)
         x = self.fc_layer(x)
@@ -82,10 +82,10 @@ class TransformerExpert(nn.Module):
         return x
 
 class FullyConnectedExpert(nn.Module):
-    def __init__(self):
+    def __init__(self, in_features):
         super().__init__()
         self.fc_layers = nn.Sequential(
-            nn.Linear(128, 300),  # Adjust input dimension based on actual input flattening
+            nn.Linear(in_features, 300),  # Adjust input dimension based on actual input flattening
             nn.ReLU(),
             nn.Linear(300, 100)
         )
@@ -101,7 +101,7 @@ class MixtureOfExperts(nn.Module):
         self.experts = nn.ModuleList([
             CNNExpert(NUM_FEATURES),
             TransformerExpert(NUM_FEATURES, SEQUENCE_LENGTH),
-            FullyConnectedExpert()
+            FullyConnectedExpert(NUM_FEATURES * SEQUENCE_LENGTH)
         ])
         self.gating_network = SegmentGatingNetwork(NUM_FEATURES, NUM_EXPERTS)
         self.output_heads = nn.ModuleDict({
@@ -127,26 +127,25 @@ def load_model(model, filepath):
     except Exception as e:
         print(f"Error loading model: {e} - Starting new model.")
 
-def generate_synthetic_data(batch_size, sequence_length, num_features, num_samples=500):
+def generate_synthetic_data(batch_size, sequence_length, num_features):
     """
     Generate synthetic data imitating a simplified financial market sequence.
     Three patterns for volatility, momentum, and mean reversion.
     """
-    data = np.zeros((num_samples, batch_size, sequence_length, num_features))
-    labels = {'volatility': np.zeros((num_samples, batch_size, 1)),
-              'momentum': np.zeros((num_samples, batch_size, 1)),
-              'mean_reversion': np.zeros((num_samples, batch_size, 1))}
+    data = np.zeros((batch_size, sequence_length, num_features))
+    labels = {'volatility': np.zeros((batch_size, 1)),
+              'momentum': np.zeros((batch_size, 1)),
+              'mean_reversion': np.zeros((batch_size, 1))}
 
-    for i in range(num_samples):
-        for j in range(batch_size):
-            data[i, j, :, :] = np.random.normal(0, 1, (sequence_length, num_features)).astype(np.float32)
+    for i in range(batch_size):
+        data[i, :, :] = np.random.normal(0, 1, (sequence_length, num_features)).astype(np.float32)
 
-            # Simple patterns: sinusoidal for volatility, linear trend for momentum, oscillation for mean reversion
-            labels['volatility'][i, j] = np.sin(i % sequence_length) + np.random.normal(0, 0.1)
-            labels['momentum'][i, j] = (i % sequence_length) / sequence_length + np.random.normal(0, 0.1)
-            labels['mean_reversion'][i, j] = np.abs(np.cos(i % sequence_length)) + np.random.normal(0, 0.1)
+        # Simple patterns: sinusoidal for volatility, linear trend for momentum, oscillation for mean reversion
+        labels['volatility'][i] = np.sin(i % sequence_length) + np.random.normal(0, 0.1)
+        labels['momentum'][i] = (i % sequence_length) / sequence_length + np.random.normal(0, 0.1)
+        labels['mean_reversion'][i] = np.abs(np.cos(i % sequence_length)) + np.random.normal(0, 0.1)
         
-    return torch.from_numpy(data), {k: torch.from_numpy(v).float() for k, v in labels.items()}
+    return torch.from_numpy(data).float(), {k: torch.from_numpy(v).float() for k, v in labels.items()}
 
 def train(model, epochs, train_loader, optimizer, criterion):
     model.train()
@@ -172,7 +171,10 @@ def evaluate(model, test_loader, criterion):
         total_loss = 0
         for x_batch, y_batch in test_loader:
             outputs = model(x_batch)
-            loss = sum(criterion(outputs[key], y_batch[key]) for key in outputs)
+            loss = 0
+            for i, key in enumerate(['volatility', 'momentum', 'mean_reversion']): 
+                label = y_batch[:, i].unsqueeze(1)  # Access labels by column index
+                loss += criterion(outputs[key], label)
             total_loss += loss.item()
         print(f"Test Loss: {total_loss/len(test_loader)}")
 
@@ -183,8 +185,8 @@ if __name__ == "__main__":
     epochs = 10
 
     # Prepare datasets
-    train_data, train_labels = generate_synthetic_data(batch_size, SEQUENCE_LENGTH, NUM_FEATURES, num_samples=500)
-    test_data, test_labels = generate_synthetic_data(batch_size, SEQUENCE_LENGTH, NUM_FEATURES, num_samples=100)
+    train_data, train_labels = generate_synthetic_data(batch_size, SEQUENCE_LENGTH, NUM_FEATURES)
+    test_data, test_labels = generate_synthetic_data(batch_size, SEQUENCE_LENGTH, NUM_FEATURES)
 
     train_labels_tensor = torch.stack([train_labels['volatility'], train_labels['momentum'], train_labels['mean_reversion']], dim=1).squeeze(-1)
     test_labels_tensor = torch.stack([test_labels['volatility'], test_labels['momentum'], test_labels['mean_reversion']], dim=1).squeeze(-1)
