@@ -1,3 +1,4 @@
+import os
 import math
 import numpy as np
 import torch
@@ -70,7 +71,7 @@ class TransformerExpert(nn.Module):
     def __init__(self, d_model, max_seq_length):
         super().__init__()
         self.positional_encoder = PositionalEncoding(d_model, max_seq_length)
-        self.transformer_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=8, dropout=0.1)
+        self.transformer_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=8, dropout=0.1, batch_first=True)
         self.encoder = nn.TransformerEncoder(self.transformer_layer, num_layers=1)
         self.fc_layer = nn.Linear(d_model, 100)
 
@@ -110,6 +111,9 @@ class MixtureOfExperts(nn.Module):
             'mean_reversion': nn.Linear(100 * NUM_SEGMENTS, 1),
         })
 
+        self.optimizer = Adam(self.parameters(), lr=learning_rate)
+        self.criterion = nn.MSELoss()
+
     def forward(self, x):
         gating_weights = self.gating_network(x)  # [batch, num_experts, num_segments]
         expert_outputs = torch.stack([expert(x).unsqueeze(1).repeat(1, NUM_SEGMENTS, 1) for expert in self.experts], dim=1)  # [batch, num_experts, num_segments, output]
@@ -121,11 +125,16 @@ def save_model(model, filepath):
     torch.save(model.state_dict(), filepath)
 
 def load_model(model, filepath):
-    try:
-        model.load_state_dict(torch.load(filepath))
-        model.train()
-    except Exception as e:
-        print(f"Error loading model: {e} - Starting new model.")
+    if os.path.exists(filepath):
+        try:
+            model.load_state_dict(torch.load(filepath))
+            print("Model loaded successfully.")
+        except Exception as e:
+            print(f"Error loading model: {e}")
+    else:
+        print("No model file found; starting with a new model.")
+    model.train()
+    return model
 
 def generate_synthetic_data(batch_size, sequence_length, num_features):
     """
@@ -147,25 +156,25 @@ def generate_synthetic_data(batch_size, sequence_length, num_features):
         
     return torch.from_numpy(data).float(), {k: torch.from_numpy(v).float() for k, v in labels.items()}
 
-def train(model, epochs, train_loader, optimizer, criterion):
+def train(model, epochs, train_loader):
     model.train()
     for epoch in range(epochs):
         total_loss = 0
         for x_batch, y_batch_all in train_loader:
-            outputs = model(x_batch)  # Assuming your model gives a dict with three outputs
+            outputs = model(x_batch)
             loss = 0
             for i, key in enumerate(['volatility', 'momentum', 'mean_reversion']): 
                 label = y_batch_all[:, i].unsqueeze(1)
-                loss += criterion(outputs[key], label)
+                loss += model.criterion(outputs[key], label)
                 
-            optimizer.zero_grad()
+            model.optimizer.zero_grad()
             loss.backward()
-            optimizer.step()
+            model.optimizer.step()
             total_loss += loss.item()
 
         print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(train_loader)}")
 
-def evaluate(model, test_loader, criterion):
+def evaluate(model, test_loader):
     model.eval()
     with torch.no_grad():
         total_loss = 0
@@ -174,7 +183,7 @@ def evaluate(model, test_loader, criterion):
             loss = 0
             for i, key in enumerate(['volatility', 'momentum', 'mean_reversion']): 
                 label = y_batch[:, i].unsqueeze(1)  # Access labels by column index
-                loss += criterion(outputs[key], label)
+                loss += model.criterion(outputs[key], label)
             total_loss += loss.item()
         print(f"Test Loss: {total_loss/len(test_loader)}")
 
@@ -183,6 +192,10 @@ if __name__ == "__main__":
     batch_size = 32
     learning_rate = 0.001
     epochs = 10
+    model_path = 'mixture_of_experts.pth'
+
+    model = MixtureOfExperts()
+    model = load_model(model, model_path)
 
     # Prepare datasets
     train_data, train_labels = generate_synthetic_data(batch_size, SEQUENCE_LENGTH, NUM_FEATURES)
@@ -197,17 +210,14 @@ if __name__ == "__main__":
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
-    # Initialize model and optimizer
-    # model = load_model('mixture-of-experts.pth')
-    model = MixtureOfExperts()
     optimizer = Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
     # Training loop
-    train(model, epochs, train_loader, optimizer, criterion)
+    train(model, epochs, train_loader)
 
     # Evaluation
-    evaluate(model, test_loader, criterion)
+    evaluate(model, test_loader)
 
     # Save the trained model
     save_model(model, 'mixture_of_experts.pth')
