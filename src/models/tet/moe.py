@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
+import matplotlib.pyplot as plt
 
 SEQUENCE_LENGTH = 50
 
@@ -121,40 +122,27 @@ class MixtureOfExperts(nn.Module):
         final_outputs = {name: head(outputs) for name, head in self.output_heads.items()}
         return final_outputs
     
+
 def save_model(model, filepath):
-    torch.save(model.state_dict(), filepath)
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': model.optimizer.state_dict()
+    }, filepath)
+    print("Model and optimizer saved successfully.")
 
 def load_model(model, filepath):
     if os.path.exists(filepath):
         try:
-            model.load_state_dict(torch.load(filepath))
-            print("Model loaded successfully.")
+            checkpoint = torch.load(filepath)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            print("Model and optimizer loaded successfully.")
         except Exception as e:
-            print(f"Error loading model: {e}")
+            print(f"Error loading model and optimizer: {e}")
     else:
         print("No model file found; starting with a new model.")
     model.train()
     return model
-
-def generate_synthetic_data(batch_size, sequence_length, num_features):
-    """
-    Generate synthetic data imitating a simplified financial market sequence.
-    Three patterns for volatility, momentum, and mean reversion.
-    """
-    data = np.zeros((batch_size, sequence_length, num_features))
-    labels = {'volatility': np.zeros((batch_size, 1)),
-              'momentum': np.zeros((batch_size, 1)),
-              'mean_reversion': np.zeros((batch_size, 1))}
-
-    for i in range(batch_size):
-        data[i, :, :] = np.random.normal(0, 1, (sequence_length, num_features)).astype(np.float32)
-
-        # Simple patterns: sinusoidal for volatility, linear trend for momentum, oscillation for mean reversion
-        labels['volatility'][i] = np.sin(i % sequence_length) + np.random.normal(0, 0.1)
-        labels['momentum'][i] = (i % sequence_length) / sequence_length + np.random.normal(0, 0.1)
-        labels['mean_reversion'][i] = np.abs(np.cos(i % sequence_length)) + np.random.normal(0, 0.1)
-        
-    return torch.from_numpy(data).float(), {k: torch.from_numpy(v).float() for k, v in labels.items()}
 
 def train(model, epochs, train_loader):
     model.train()
@@ -187,9 +175,63 @@ def evaluate(model, test_loader):
             total_loss += loss.item()
         print(f"Test Loss: {total_loss/len(test_loader)}")
 
+def generate_synthetic_data(batch_size, sequence_length, num_features):
+    """
+    Generate synthetic data where the average of 128 features at each timestep
+    follows a sinusoidal pattern, with derived labels for volatility, momentum, and trend.
+    """
+    data = np.random.normal(0, 1, (batch_size, sequence_length, num_features))
+    labels = {
+        'volatility': np.zeros((batch_size, 1)),
+        'momentum': np.zeros((batch_size, 1)),
+        'mean_reversion': np.zeros((batch_size, 1))
+    }
+
+    for i in range(batch_size):
+        phase = np.random.uniform(0, 2 * np.pi)  # Random phase shift
+        amplitude = np.random.uniform(0.5, 2.0)  # Random amplitude
+        frequency = np.random.uniform(0.1, 0.5)  # Random frequency within a reasonable range
+
+        sinusoidal_pattern = amplitude * np.sin(frequency * np.arange(sequence_length) + phase)
+        
+        # Adjust the data so that the mean of the features at each timestep matches the sinusoidal pattern
+        data_mean_adjustment = sinusoidal_pattern - data[i].mean(axis=1)
+        data[i] += data_mean_adjustment[:, np.newaxis]  # Broadcasting the adjustment
+
+        # Generating labels based on the properties of the sinusoid
+        labels['volatility'][i] = amplitude
+        midpoint = sequence_length // 2
+        labels['momentum'][i] = (sinusoidal_pattern[midpoint] - sinusoidal_pattern[midpoint - 1]) * frequency
+        labels['mean_reversion'][i] = 1 if sinusoidal_pattern[-1] > sinusoidal_pattern[-10] else 0
+
+    return torch.from_numpy(data).float(), {k: torch.from_numpy(v).float() for k, v in labels.items()}
+
+def evaluate_and_capture(model, test_loader):
+    model.eval()
+    predictions = []
+    actuals = []
+    with torch.no_grad():
+        for x_batch, y_batch in test_loader:
+            outputs = model(x_batch)
+            # Assuming you want to visualize the predictions for 'volatility'
+            predicted = outputs['momentum'].squeeze(1).cpu().numpy()  # Adjust indexing based on your output dictionary keys
+            actual = y_batch[:, 1].cpu().numpy()  # Adjust indexing if different label is needed
+            predictions.extend(predicted)
+            actuals.extend(actual)
+    return predictions, actuals
+
+def plot_predictions_vs_actuals(predictions, actuals):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(range(len(actuals)), actuals, color='blue', label='Actual', alpha=0.5)
+    plt.scatter(range(len(predictions)), predictions, color='red', label='Predicted', alpha=0.5)
+    plt.title('Comparison of Actual and Predicted Values')
+    plt.xlabel('Sample Index')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.show()
 
 if __name__ == "__main__":
-    batch_size = 32
+    batch_size = 100
     learning_rate = 0.001
     epochs = 10
     model_path = 'mixture_of_experts.pth'
@@ -210,14 +252,15 @@ if __name__ == "__main__":
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
-    optimizer = Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.MSELoss()
-
     # Training loop
     train(model, epochs, train_loader)
 
-    # Evaluation
-    evaluate(model, test_loader)
+    # Evaluate
+    # evaluate(model, test_loader)
+    predictions, actuals = evaluate_and_capture(model, test_loader)
+
+    # Plotting
+    plot_predictions_vs_actuals(predictions, actuals)
 
     # Save the trained model
     save_model(model, 'mixture_of_experts.pth')
