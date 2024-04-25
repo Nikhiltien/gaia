@@ -92,6 +92,9 @@ class HyperLiquid(WebsocketClient, Adapter):
 
         asyncio.create_task(self.subscribe_all_user(interval=60))
 
+    def disconnect(self):
+        super()._disconnect()
+
     def _handle_incoming_message(self, message):
         channel = message.get('channel')
         if channel == 'subscriptionResponse':

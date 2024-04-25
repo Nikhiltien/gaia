@@ -1,4 +1,5 @@
 import os
+import yaml
 import asyncio
 import atexit
 import signal
@@ -14,6 +15,7 @@ from src.game_env import GameEnv
 from src.zeromq.zeromq import ZeroMQ
 from src.console import Console
 from src.models.tet.tet import DDQN, Agent
+from src.database.db_manager import PGDatabase
 from typing import Dict
 
 from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
@@ -24,7 +26,7 @@ class GAIA:
         self.logger = logging.getLogger(__name__)
 
         self.feed = feed
-        self.zmq = ZeroMQ()
+        # self.api_manager = APIManager()
 
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -33,19 +35,24 @@ class GAIA:
 
     async def run(self, console=False) -> None:
 
+        config = await self.load_config()
         env_path = os.path.expanduser('~/gaia/keys/private_key.env')
         load_dotenv(dotenv_path=env_path)
+
         PRIVATE_KEY = os.getenv('PRIVATE_KEY_MAIN')
         public = '0x7195d5fBC22Afa1FF6A0A25591285Db7a81838D4'
         # vault = '0xb22177120b2f33d39770a25993bcb14f2753bae6'
 
-        router_socket = self.zmq.create_subscriber(port=50020, name="OMS")
-        send_socket = self.zmq.create_publisher(port=50020)
-        recv_socket = self.zmq.create_subscriber(port=50000, name="Streams")
-        pub_socket = self.zmq.create_publisher(port=50000)
+        zmq = ZeroMQ()
+        router_socket = zmq.create_subscriber(port=50020, name="")
+        send_socket = zmq.create_publisher(port=50020)
+        recv_socket = zmq.create_subscriber(port=50000, name="")
+        pub_socket = zmq.create_publisher(port=50000)
 
-        # api_manager = APIManager()
-        # adapter = await api_manager.load('HYPERLIQUID')
+        database = PGDatabase(config=config)
+        await database.start()
+
+        # adapter = await self.api_manager.load('HYPERLIQUID')
 
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
         await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
@@ -69,16 +76,20 @@ class GAIA:
                                         default_leverage=5, max_depth=10).start()),
             asyncio.create_task(OMS(self.feed, adapter, router_socket).run()),
             # asyncio.create_task(APIManager().start()),
-            # asyncio.create_task(Console().start()),
             ]
         
+        if console: 
+            tasks.append(asyncio.create_task(Console().start()))
+
         await asyncio.gather(*tasks)
 
     def exit(self) -> None:
         pass
 
-    async def load_config(self, path: str = '/etc/config.yml') -> Dict:
-        pass
+    async def load_config(self, path: str = 'etc/config.yml') -> Dict:
+        with open(path, "r") as f:
+            config = yaml.safe_load(f)
+            return config
 
     async def _wait_for_confirmation(self) -> None:
         while True:

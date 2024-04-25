@@ -207,6 +207,9 @@ class Console(QMainWindow):
         self.add_dock_widget("Account", AccountWindow())
         self.add_dock_widget("Systems", QWidget())
 
+    def start():
+        pass
+
     def add_dock_widget(self, title, widget):
         dock = QDockWidget(title, self)
         dock.setWidget(widget)

@@ -1,7 +1,7 @@
 import uvloop
 import asyncio
-import cProfile
 import argparse
+import cProfile
 
 from src.feed import Feed
 from src.core import GAIA
@@ -12,10 +12,10 @@ async def main(profiling=False):
     logging = setup_logger(level='INFO', stream=True)
     logging.info("Starting Gaia...")
     
-    contracts= ["ETH"] # , "BTC"]
+    contracts = ["ETH"] # , "BTC"]
 
     data_feed = Feed(contracts=contracts, max_depth=10)
-    strategy = asyncio.create_task(GAIA(feed=data_feed).run())
+    strategy = asyncio.create_task(GAIA(data_feed).run())
     await strategy
 
 

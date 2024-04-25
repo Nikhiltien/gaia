@@ -1,0 +1,5 @@
+TimescaleDB:
+  user: nikhiltien
+  database: gaea
+  host: 127.0.0.1
+  port: 5432

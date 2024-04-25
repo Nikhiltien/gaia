@@ -20,9 +20,10 @@ KLINES_DIM = 5
 INPUT_DIM = SYMBOLS * (TIMESTAMP + ORDER_BOOK_DIM + TRADES_DIM + KLINES_DIM)
 
 SEQUENCE_LENGTH = 50
-NUM_FEATURES = 128  # Adjust based on calculated input dimensions
+NUM_FEATURES = 128
 NUM_SEGMENTS = 10
 NUM_EXPERTS = 3
+
 
 class SegmentGatingNetwork(nn.Module):
     def __init__(self, num_features, num_experts):
@@ -98,7 +99,7 @@ class FullyConnectedExpert(nn.Module):
         return x
 
 class MixtureOfExperts(nn.Module):
-    def __init__(self):
+    def __init__(self, learning_rate=0.001):
         super().__init__()
         self.experts = nn.ModuleList([
             CNNExpert(NUM_FEATURES),
@@ -121,7 +122,7 @@ class MixtureOfExperts(nn.Module):
         outputs = torch.einsum('bns,bnso->bso', gating_weights, expert_outputs).view(x.shape[0], -1)  # Weighted sum over experts and flatten
         final_outputs = {name: head(outputs) for name, head in self.output_heads.items()}
         return final_outputs
-    
+
 
 def save_model(model, filepath):
     torch.save({
