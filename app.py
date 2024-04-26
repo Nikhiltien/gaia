@@ -16,7 +16,7 @@ async def main(profiling=False, console=False):
     database = PGDatabase(config=config)
     await database.start()
 
-    contracts = ["ETH"]
+    contracts = ["ETH", "BTC", "SOL", "WIF"]
     data_feed = Feed(database=database, contracts=contracts, max_depth=10)
     strategy = asyncio.create_task(GAIA(feed=data_feed, console=console).run())
     await strategy

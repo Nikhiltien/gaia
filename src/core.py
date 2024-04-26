@@ -69,9 +69,9 @@ class GAIA:
 
         tasks = [
             asyncio.create_task(Streams(self.feed, recv_socket).start()),
-            asyncio.create_task(GameEnv(self.feed, send_socket, agent, 
-                                        default_leverage=5, max_depth=10).start()),
-            asyncio.create_task(OMS(self.feed, adapter, router_socket).run()),
+            # asyncio.create_task(GameEnv(self.feed, send_socket, agent, 
+                                        # default_leverage=5, max_depth=10).start()),
+            # asyncio.create_task(OMS(self.feed, adapter, router_socket).run()),
             # asyncio.create_task(APIManager().start()),
             ]
         

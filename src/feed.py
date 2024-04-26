@@ -13,13 +13,6 @@ from src.database.db_manager import PGDatabase
 BUFFER_SIZE = 200
 BALANCE_CHANGE_THRESHOLD = 0.05
 
-contract = {
-    "symbol": "ETH",
-    "secType": "PERP",
-    "exchange": "HYPERLIQUID",
-    "currency": "USD"
-    }
-
 class InventoryField(Enum):
     QUANTITY = 'qty'
     AVERAGE_PRICE = 'avg_price'
@@ -149,11 +142,17 @@ class Feed:
     def add_execution(self, execution: List) -> None:
         self.executions.append(execution)
 
-    async def add_orderbook_snapshot(self, symbol: str, book: NDArray) -> None:            
+    async def add_orderbook_snapshot(self, symbol: str, book: NDArray) -> None:
         self._order_books[symbol].append(book)
         await self.enqueue_symbol_update(symbol)
 
         if self.db:
+            contract = {
+                "symbol": symbol,
+                "secType": "PERP",
+                "exchange": "HYPERLIQUID",
+                "currency": "USD"
+                }
             await self.db.store_order_book_data(book, contract)
 
     async def add_trades(self, trades: List[Dict]) -> None:
@@ -164,6 +163,12 @@ class Feed:
             self._trades[symbol].append(trade_array)
 
         if self.db:
+            contract = {
+                "symbol": symbol,
+                "secType": "PERP",
+                "exchange": "HYPERLIQUID",
+                "currency": "USD"
+                }
             await self.db.store_trade_data(trades, contract)
        
         # await self.enqueue_symbol_update(symbol)
@@ -171,8 +176,7 @@ class Feed:
     async def add_trades_custom(self, trades: List[Dict]) -> None:
         symbol = trades[0]['symbol']
         timestamp = float(trades[0]['timestamp'])
-
-        # Initialize aggregation variables
+        
         buy_count, buy_qty_sum, buy_price_qty_sum = 0, 0, 0
         sell_count, sell_qty_sum, sell_price_qty_sum = 0, 0, 0
 
@@ -195,33 +199,42 @@ class Feed:
         avg_buy_price = buy_price_qty_sum / buy_qty_sum if buy_count > 0 else 0
         avg_sell_price = sell_price_qty_sum / sell_qty_sum if sell_count > 0 else 0
 
-        # Create the aggregated trade summary
         aggregated_trade_data = (timestamp, buy_count, avg_buy_price, buy_qty_sum, sell_count, avg_sell_price, sell_qty_sum)
-
-        # Append to the ring buffer
         self._trades[symbol].append(aggregated_trade_data)
         # await self.enqueue_symbol_update(symbol)
 
         if self.db:
+            contract = {
+                "symbol": symbol,
+                "secType": "PERP",
+                "exchange": "HYPERLIQUID",
+                "currency": "USD"
+                }
             await self.db.store_trade_data(trades, contract)
 
-    async def add_kline(self, symbol: str, kline: NDArray) -> None:
+    async def add_kline(self, symbol: str, kline: NDArray) -> None:        
         unwrapped = self._klines[symbol]._unwrap()
-        last_kline_exists = unwrapped.size > 0  # Check if there are any klines
+        last_kline = unwrapped[-1] if unwrapped.size > 0 else None
+        store = False
 
-        # Check if the last kline should be replaced
-        if last_kline_exists and unwrapped[-1][0] == kline[0]:
+        if last_kline is not None and last_kline[0] == kline[0]:
             self._klines[symbol].pop()  # Remove the last kline if it has the same timestamp
-            store = False
         else:
-            store = True
+            if last_kline is not None and unwrapped.size > 1:
+                store = True
 
         self._klines[symbol].append(kline)
 
         if store and self.db:
-            await self.db.store_klines_data(kline, contract)
+            contract = {
+                "symbol": symbol,
+                "secType": "PERP",
+                "exchange": "HYPERLIQUID",
+                "currency": "USD"
+                }
+            await self.db.store_klines_data(last_kline, contract)
 
-        # Enqueuing symbol is unnecessary for Trades as Klines update per trade
+        # Enqueuing symbol is unnecessary for trades as klines update per trade
         # await self.enqueue_symbol_update(symbol)
 
     @property
