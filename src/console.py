@@ -1,47 +1,81 @@
 import sys
 import time
-import random
 import logging
-import json
 import asyncio
-import pyqtgraph as pg
 from datetime import datetime
-from src.zeromq.zeromq import SubscriberSocket
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QWidget, QVBoxLayout, QTabWidget, QTableView, QPushButton
-from PyQt5.QtGui import QStandardItemModel, QStandardItem
-from PyQt5.QtCore import pyqtSignal, QObject, QThread, QTimer, Qt
-from asyncqt import QEventLoop
+import pyqtgraph as pg
+from qasync import QEventLoop, QApplication
+from PySide6.QtCore import QObject, QThread, QTimer, Qt
+from PySide6.QtWidgets import QApplication, QMainWindow, QDockWidget, QWidget, QVBoxLayout, QTabWidget, QTableView, QPushButton
+from PySide6.QtGui import QStandardItemModel, QStandardItem
+from src.feed import Feed
 
-# Worker class for handling asynchronous tasks
-class Worker(QObject):
-    finished = pyqtSignal()
-    dataFetched = pyqtSignal(dict)
 
-    def __init__(self, zmq_subscriber, contract_id):
+class Console:
+    def __init__(self, feed: Feed):
+        self.app = QApplication(sys.argv)
+        self.loop = QEventLoop(self.app)
+        asyncio.set_event_loop(self.loop)
+        self.close_event = asyncio.Event()
+
+        self.main_window = MainWindow(feed)
+        self.setup_application()
+
+    def setup_application(self):
+        self.app.aboutToQuit.connect(self.close_event.set)
+        self.app.setStyleSheet(stylesheet)
+
+    def quit_application(self):
+        self.loop.stop()
+
+    def run(self):
+        with self.loop:
+            self.main_window.show()
+            # self.main_window.start_async_tasks()
+            self.loop.run_forever()
+        sys.exit(0)
+
+class MainWindow(QMainWindow):
+    def __init__(self, feed: Feed):
         super().__init__()
-        self.zmq_subscriber = zmq_subscriber
-        self.contract_id = contract_id
+        self.feed = feed
 
-    async def run(self):
-        try:
-            while True:
-                message = await self.zmq_subscriber.receive_message()
-                logging.debug(f"message: {message}")
-                market_data = json.loads(message)
+        self.setWindowTitle("HFT Console")
+        self.setGeometry(100, 100, 800, 600)
 
-                if market_data.get('contract_id') == self.contract_id:
-                    self.dataFetched.emit(market_data)
-        except Exception as e:
-            logging.error(f"Error in Worker: {e}")
-            self.finished.emit()
+        self.poll_task = None # asyncio.create_task(self.poll_feed())
+        # self.worker = Worker()
+        # self.worker.dataFetched.connect(self.update_ui_with_data)
+        # asyncio.create_task(self.worker.run())
 
-# EventBusConnector (mock implementation)
-class EventBusConnector(QObject):
-    def __init__(self):
-        super().__init__()
-        # Setup connections to event_bus here
+        self.add_dock_widget("Chart", ChartWindow())
+        self.add_dock_widget("Account", AccountWindow())
+        self.add_dock_widget("Systems", QWidget())
 
-# AccountWindow for displaying account information
+    def start_async_tasks(self):
+        self.poll_task = asyncio.create_task(self.poll_feed())
+
+    def poll_feed(self):
+        while True:
+            time.sleep(1)
+            print(1)
+            # new_trades = self.feed.trades
+            # if new_trades:
+            #     self.chart_window.update_chart(new_trades)
+
+    def add_dock_widget(self, title, widget):
+        dock = QDockWidget(title, self)
+        dock.setWidget(widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, dock)
+
+    def update_ui_with_data(self, data):
+        dock_widgets = self.findChildren(QDockWidget)
+        for dock in dock_widgets:
+            if isinstance(dock.widget(), AccountWindow):
+                dock.widget().update_data(data)
+            elif isinstance(dock.widget(), ChartWindow):
+                dock.widget().update_chart(data)
+
 class AccountWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -190,41 +224,16 @@ class ChartWindow(QWidget):
                 self.trade_x_data.append(timestamp)
                 self.trade_y_data.append(trade_price)
 
-# Main application window
-class Console(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("HFT Console")
-        self.setGeometry(100, 100, 800, 600)
+# class Worker(QObject):
+#     finished = pyqtSignal()
+#     dataFetched = pyqtSignal(dict)
 
-        # Worker setup for asynchronous operations
-        self.worker = Worker(zmq_subscriber, contract_id)
-        self.worker.dataFetched.connect(self.update_ui_with_data)
-        asyncio.create_task(self.worker.run())
+#     def __init__(self):
+#         super().__init__()
 
-        # Adding dockable panes
-        self.add_dock_widget("Chart", ChartWindow())
-        self.add_dock_widget("Account", AccountWindow())
-        self.add_dock_widget("Systems", QWidget())
+#     async def run(self):
+#         pass
 
-    def start():
-        print("-- Placeholder --")
-        pass
-
-    def add_dock_widget(self, title, widget):
-        dock = QDockWidget(title, self)
-        dock.setWidget(widget)
-        self.addDockWidget(Qt.RightDockWidgetArea, dock)
-        return dock
-
-    def update_ui_with_data(self, data):
-        dock_widgets = self.findChildren(QDockWidget)
-        
-        for dock in dock_widgets:
-            if isinstance(dock.widget(), AccountWindow):
-                dock.widget().update_data(data)
-            elif isinstance(dock.widget(), ChartWindow):
-                dock.widget().update_chart(data)
 
 stylesheet = """
     QMainWindow {
@@ -285,22 +294,6 @@ stylesheet = """
     }
 """
 
-zmq_subscriber = None # SubscriberSocket(address="tcp://localhost:5556")
-contract_id = 603558814
-
-def start():
-    app = QApplication(sys.argv)
-    loop = QEventLoop(app)
-    asyncio.set_event_loop(loop)
-    
-    def quit_application():
-        loop.stop()
-
-    app.aboutToQuit.connect(quit_application)
-    app.setStyleSheet(stylesheet)
-
-    with loop:
-        mainWin = Console()
-        mainWin.show()
-        loop.run_forever()
-    sys.exit(0)
+if __name__ == '__main__':
+    console = Console(Feed())
+    console.run()

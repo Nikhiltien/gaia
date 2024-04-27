@@ -11,7 +11,7 @@ logging = setup_logger(level='INFO', stream=True)
 
 async def main(profiling=False, console=False):
 
-    contracts = ["ETH"] # , "BTC", "SOL", "WIF"]
+    contracts = ["ETH", "BTC", "SOL", "WIF"]
     data_feed = Feed(contracts=contracts, max_depth=10)
     strategy = asyncio.create_task(GAIA(feed=data_feed, console=console).run())
     await strategy

@@ -43,7 +43,7 @@ class GAIA:
         vault = '0xb22177120b2f33d39770a25993bcb14f2753bae6'
 
         await self.database.start(config)
-        # self.feed.db = self.database
+        self.feed.db = self.database
 
         zmq = ZeroMQ()
         router_socket = zmq.create_subscriber(port=50020, name="")
@@ -76,7 +76,7 @@ class GAIA:
             ]
         
         if self.console: 
-            tasks.append(asyncio.create_task(Console().start()))
+            tasks.append(asyncio.create_task(Console(self.feed).run()))
 
         await asyncio.gather(*tasks)
 
