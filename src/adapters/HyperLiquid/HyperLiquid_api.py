@@ -1,9 +1,8 @@
 import json
-import random
 import time
+import random
 import threading
 import asyncio
-import numpy as np
 
 import eth_account
 from eth_account.signers.local import LocalAccount
@@ -133,13 +132,13 @@ class HyperLiquid(WebsocketClient, Adapter):
         if channel is None:
             print(f"HyperLiquid System Msg: {message}")
         elif "orderUpdates" in channel:
-            self._process_orders(message)
+            self._process_orders(message.get("data"))
         elif "l2Book" in channel:
             self._process_order_book(message)
         elif "trade" in channel:
-            self._process_trade(message)
+            self._process_trade(message.get("data"))
         elif "candle" in channel:
-            self._process_candle(message)
+            self._process_candle(message.get("data"))
         else:
             self.logger.info(f"Unrecognized channel: {message}")
             pass
@@ -422,7 +421,7 @@ class HyperLiquid(WebsocketClient, Adapter):
 
     async def get_klines(self, candle_details: Dict):
         response = self.info.candles_snapshot(
-            coin=candle_details.get("coin"),
+            coin=candle_details.get("symbol"),
             interval=candle_details.get("interval"),
             startTime=candle_details.get("startTime"),
             endTime=candle_details.get("endTime")
@@ -436,6 +435,14 @@ class HyperLiquid(WebsocketClient, Adapter):
             "coin": symbol,
             "interval": str(interval)
         }
+
+        end = int(time.time() * 1000)
+        start = end - 3600000 # 1 hour
+        req = {"symbol": contract['symbol'], "interval": "1m", "startTime": start, "endTime": end}
+        klines = await self.get_klines(req)
+        for kline in klines:
+            self._process_candle(kline)
+
         return await self._subscribe_to_topic(method="subscribe", params=params, req_id=req_id)
 
     def _process_notification(self, data):
@@ -514,9 +521,8 @@ class HyperLiquid(WebsocketClient, Adapter):
         # print(f"User Events: {parsed_events}")
 
     def _process_orders(self, data):
-        order_updates = data.get('data', [])
         parsed_orders = []
-        for order_data in order_updates:  # Iterating through the list of order updates
+        for order_data in data:  # Iterating through the list of order updates
             order = order_data.get('order', {})
             parsed_order = {
                 "symbol": order.get('coin'),
@@ -562,7 +568,7 @@ class HyperLiquid(WebsocketClient, Adapter):
 
     def _process_trade(self, data: List[Dict]) -> List[Dict]:
         trades = []
-        for trade in data.get("data"):
+        for trade in data:
             trades.append({
                 "symbol": trade["coin"],
                 "side": 1 if trade['side'] == 'B' else 0,
@@ -577,10 +583,7 @@ class HyperLiquid(WebsocketClient, Adapter):
             self.msg_callback("trades", trades)
         # print(f"Trades: {trades}")
 
-    def _process_candle(self, message):
-        # Directly access 'data' as it already represents a single candle.
-        candle_data = message.get('data', {})
-
+    def _process_candle(self, candle_data):
         parsed_candle = {
             'open_timestamp': candle_data.get('t'),
             'close_timestamp': candle_data.get('T'),
@@ -596,4 +599,3 @@ class HyperLiquid(WebsocketClient, Adapter):
 
         if self.msg_callback:
             self.msg_callback("klines", parsed_candle)
-        # print(f"Candle: {parsed_candle}")

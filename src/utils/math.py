@@ -40,28 +40,37 @@ def bbw(klines: NDArray, length: int, multiplier: float) -> float:
     return 2 * dev 
 
 @njit(cache=True)
-def ema(arr_in: NDArray, window: int, alpha: Optional[float]=0) -> NDArray:
+def calculate_bollinger_bands(klines: NDArray, length: int, multiplier: float):
     """
-    Calculates the Exponential Moving Average (EMA) of an input array.
+    Calculates the Bollinger Bands (upper and lower) for a given set of klines.
 
     Parameters
     ----------
-    arr_in : NDArray
-        The input array for which the EMA is calculated. Typically, this is an array of closing prices.
-    window : int
-        The window size for the EMA calculation, specifying the number of periods to consider for the moving average.
-    alpha : float, optional
-        The decay factor for the EMA calculation. If not provided, it is calculated as 3 / (window + 1).
+    klines : NDArray
+        The klines data array, where each row represents a kline and the 5th column contains the close prices.
+    length : int
+        The number of periods to use for calculating the EMA and the standard deviation.
+    multiplier : float
+        The multiplier for the standard deviation to calculate the upper and lower bands.
 
     Returns
     -------
-    NDArray
-        An array of the same length as `arr_in`, containing the calculated EMA values.
+    tuple
+        A tuple containing arrays for the upper and lower Bollinger Bands.
+    """
+    closes = klines[:, 4]
+    ema_values = ema(closes, window=length)
+    std_dev = np.std(closes[-length:])
 
-    Notes
-    -----
-    - The first EMA value is simply the first value of `arr_in`, as there's no preceding data to average.
-    - This implementation initializes the EMA calculation with the first data point in the input array.
+    upper_band = ema_values + (std_dev * multiplier)
+    lower_band = ema_values - (std_dev * multiplier)
+
+    return upper_band[-1], lower_band[-1]
+
+@njit(cache=True)
+def ema(arr_in: NDArray, window: int, alpha: float=0) -> NDArray:
+    """
+    Calculates the Exponential Moving Average (EMA) of an input array.
     """
     alpha = 3 / float(window + 1) if alpha == 0 else alpha
     n = arr_in.size

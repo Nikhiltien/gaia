@@ -7,6 +7,7 @@ from typing import List, Dict, Set
 from numpy.typing import NDArray
 from collections import deque
 from numpy_ringbuffer import RingBuffer
+from src.utils.math import calculate_bollinger_bands
 from src.database.db_manager import PGDatabase
 
 
@@ -49,7 +50,7 @@ class Feed:
                                     for contract in self.contracts}
         self._trades = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=(float, 7))
                         for contract in self.contracts}
-        self._klines = {contract['symbol']: RingBuffer(capacity=BUFFER_SIZE, dtype=(float, 6))
+        self._klines = {contract['symbol']: RingBuffer(capacity=60, dtype=(float, 8))
                         for contract in self.contracts}
     
     @property
@@ -212,16 +213,21 @@ class Feed:
                 }
             await self.db.store_trade_data(trades, contract)
 
-    async def add_kline(self, symbol: str, kline: NDArray) -> None:        
+    async def add_kline(self, symbol: str, kline: NDArray) -> None:
         unwrapped = self._klines[symbol]._unwrap()
         last_kline = unwrapped[-1] if unwrapped.size > 0 else None
         store = False
 
-        if last_kline is not None and last_kline[0] == kline[0]:
-            self._klines[symbol].pop()  # Remove the last kline if it has the same timestamp
+        if last_kline is not None:
+            if last_kline[0] == kline[0]:
+                self._klines[symbol].pop()  # Remove the last kline if it has the same timestamp
+            elif unwrapped.size > 1:
+                    store = True
+
+            upper_band, lower_band = calculate_bollinger_bands(unwrapped, length=20, multiplier=1)
+            kline = np.append(kline, [upper_band, lower_band])
         else:
-            if last_kline is not None and unwrapped.size > 1:
-                store = True
+            kline = np.append(kline, [0, 0])
 
         self._klines[symbol].append(kline)
 

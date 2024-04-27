@@ -5,19 +5,14 @@ import cProfile
 
 from src.logger import setup_logger
 from src.feed import Feed
-from src.database.db_manager import PGDatabase
-from src.core import GAIA, load_config
+from src.core import GAIA
 
 logging = setup_logger(level='INFO', stream=True)
 
 async def main(profiling=False, console=False):
-    config = load_config()
 
-    database = PGDatabase(config=config)
-    await database.start()
-
-    contracts = ["ETH", "BTC", "SOL", "WIF"]
-    data_feed = Feed(database=database, contracts=contracts, max_depth=10)
+    contracts = ["ETH"] # , "BTC", "SOL", "WIF"]
+    data_feed = Feed(contracts=contracts, max_depth=10)
     strategy = asyncio.create_task(GAIA(feed=data_feed, console=console).run())
     await strategy
 

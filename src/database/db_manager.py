@@ -12,16 +12,15 @@ from contextlib import asynccontextmanager
 from typing import Optional, List, Any, Tuple, Dict
 
 class PGDatabase:
-    def __init__(self, min_size: int = 5, max_size: int = 25, config=None, **kwargs):
+    def __init__(self, min_size: int = 5, max_size: int = 25, **kwargs):
         self.logger = logging.getLogger(__name__)
         self.min_size = min_size
         self.max_size = max_size
         self.pool: Optional[Pool] = None
-        self.config = config # sshtunnel
+        # sshtunnel
 
-    async def start(self, first_run=False):
-
-        db_params = self.config.get('TimescaleDB')
+    async def start(self, config, first_run=False):
+        db_params = config.get('TimescaleDB')
         await self.connect(**db_params)
 
         if first_run:
@@ -135,7 +134,7 @@ class PGDatabase:
         
     async def connect(self, **kwargs):
         user = kwargs.get('user')
-        password = kwargs.get('password', '')  # Assuming password might be optional
+        password = kwargs.get('password', '')  # Password optional
         database = kwargs.get('database')
         host = kwargs.get('host')
         port = kwargs.get('port')

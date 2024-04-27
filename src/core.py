@@ -25,9 +25,10 @@ class GAIA:
     def __init__(self, feed: Feed, console=False) -> None:
         self.logger = logging.getLogger(__name__)
 
+        # self.api_manager = APIManager()
+        self.database = PGDatabase()
         self.feed = feed
         self.console = console
-        # self.api_manager = APIManager()
 
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -35,13 +36,14 @@ class GAIA:
         signal.signal(signal.SIGTERM, self.exit)
 
     async def run(self) -> None:
+        config = load_config()
 
-        env_path = os.path.expanduser('~/gaia/keys/private_key.env')
-        load_dotenv(dotenv_path=env_path)
-
-        PRIVATE_KEY = os.getenv('PRIVATE_KEY_MAIN')
+        private_key = config["HyperLiquid"]["key"]
         public = '0x7195d5fBC22Afa1FF6A0A25591285Db7a81838D4'
-        # vault = '0xb22177120b2f33d39770a25993bcb14f2753bae6'
+        vault = '0xb22177120b2f33d39770a25993bcb14f2753bae6'
+
+        await self.database.start(config)
+        # self.feed.db = self.database
 
         zmq = ZeroMQ()
         router_socket = zmq.create_subscriber(port=50020, name="")
@@ -49,10 +51,8 @@ class GAIA:
         recv_socket = zmq.create_subscriber(port=50000, name="")
         pub_socket = zmq.create_publisher(port=50000)
 
-        # adapter = await self.api_manager.load('HYPERLIQUID')
-
         adapter = HyperLiquid(msg_callback=pub_socket.publish_data)
-        await adapter.connect(key=PRIVATE_KEY, public=public) # , vault=vault)
+        await adapter.connect(key=private_key, public=public) # , vault=vault)
         await adapter.subscribe_all_symbol(contracts=self.feed.contracts, num_levels=self.feed.max_depth)
 
         model = DDQN()
@@ -79,6 +79,8 @@ class GAIA:
             tasks.append(asyncio.create_task(Console().start()))
 
         await asyncio.gather(*tasks)
+
+        self.exit()
 
     def exit(self) -> None:
         pass
@@ -120,4 +122,13 @@ class GAIA:
 def load_config(path: str = 'etc/config.yml') -> Dict:
     with open(path, "r") as f:
         config = yaml.safe_load(f)
+        for key in config:
+            if 'type' in config[key]:
+                key_name = config[key]['type']
+                config[key]['key'] = load_keys(key=key_name)
         return config
+    
+def load_keys(path: str = '~/gaia/keys/private_key.env', key: str = None) -> Dict:
+    env_path = os.path.expanduser(path)
+    load_dotenv(dotenv_path=env_path)
+    return os.getenv(key)
