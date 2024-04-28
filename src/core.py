@@ -13,7 +13,6 @@ from src.feed import Feed
 from src.py_streams import Streams
 from src.game_env import GameEnv
 from src.zeromq.zeromq import ZeroMQ
-from src.console import Console
 from src.models.tet.tet import DDQN, Agent
 from src.database.db_manager import PGDatabase
 from typing import Dict
@@ -22,13 +21,12 @@ from src.adapters.HyperLiquid.HyperLiquid_api import HyperLiquid
 
 
 class GAIA:
-    def __init__(self, feed: Feed, console=False) -> None:
+    def __init__(self, feed: Feed) -> None:
         self.logger = logging.getLogger(__name__)
 
         # self.api_manager = APIManager()
         self.database = PGDatabase()
         self.feed = feed
-        self.console = console
 
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -74,9 +72,6 @@ class GAIA:
             # asyncio.create_task(OMS(self.feed, adapter, router_socket).run()),
             # asyncio.create_task(APIManager().start()),
             ]
-        
-        if self.console: 
-            tasks.append(asyncio.create_task(Console(self.feed).run()))
 
         await asyncio.gather(*tasks)
 

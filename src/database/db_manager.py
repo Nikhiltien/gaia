@@ -240,6 +240,39 @@ class PGDatabase:
                 symbol, contract['exchange']
             )
 
+    async def fetch_contract_by_symbol_exchange(self, symbol: str, exchange: str) -> Optional[Tuple[int, Dict]]:
+        """
+        Fetch a single contract by symbol and exchange.
+        
+        :param symbol: The trading symbol of the contract
+        :param exchange: The exchange on which the contract is traded
+        :return: A tuple containing the contract ID and a dictionary of contract details if found, else None
+        """
+        query = """
+            SELECT id, symbol, sec_type, exchange, currency, multiplier, expiration, option_right, strike
+            FROM Contracts
+            WHERE symbol = $1 AND exchange = $2;
+        """
+        async with self.connection() as conn:
+            record = await conn.fetchrow(query, symbol, exchange)
+            if record:
+                # Extract the ID separately and return the rest as a dictionary
+                contract_id = record['id']
+                contract_details = {key: record[key] for key in record.keys() if key != 'id'}
+                return (contract_id, contract_details)
+            return None
+
+    async def fetch_all_contracts(self) -> List[Dict]:
+        """
+        Fetch all contracts from the database and return them in a list of dictionaries.
+        
+        :return: List of dictionaries, each containing details of one contract
+        """
+        query = "SELECT id, symbol, sec_type, exchange, currency, multiplier, expiration, option_right, strike FROM Contracts;"
+        async with self.connection() as conn:
+            records = await conn.fetch(query)
+            return [{key: record[key] for key in record.keys()} for record in records]
+
     async def store_trade_data(self, trades: List[Dict], contract: Dict):
         contract_id = await self.insert_contract(contract)
 
@@ -299,6 +332,35 @@ class PGDatabase:
         else:
             self.logger.error("Failed to store order book data due to missing contract ID.")
 
+    async def fetch_order_book(self, contract_id: int, start_time: Optional[int] = None, end_time: Optional[int] = None) -> List[Dict]:
+        """
+        Fetch order book data for a given contract and time range.
+        
+        :param contract_id: Contract identifier
+        :param start_time: Start of the time range as a Unix timestamp (optional)
+        :param end_time: End of the time range as a Unix timestamp (defaults to current time if None)
+        :return: List of dictionaries containing order book data
+        """
+        query = """
+            SELECT contract_id, bids, asks, timestamp
+            FROM LimitOrderBook
+            WHERE contract_id = $1
+        """
+        conditions = [contract_id]
+        
+        if start_time:
+            query += " AND timestamp >= $2"
+            conditions.append(start_time)
+        
+        if end_time:
+            query += " AND timestamp <= $3"
+            conditions.append(end_time)
+        else:
+            query += " ORDER BY timestamp DESC LIMIT 1"  # Fetches the most recent snapshot if end_time is not provided
+
+        async with self.connection() as conn:
+            return await conn.fetch(query, *conditions)
+
     async def store_klines_data(self, ohlc_data: np.ndarray, contract: dict):
         contract_id = await self.insert_contract(contract)
 
@@ -317,3 +379,15 @@ class PGDatabase:
             self.logger.debug(f"Successfully stored OHLC data for contract {contract}.")
         else:
             self.logger.error("Failed to obtain contract ID for storing OHLC data.")
+
+    def json_to_numpy(bids_json: str, asks_json: str) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Convert JSON strings of bids and asks to NumPy arrays.
+        
+        :param bids_json: JSON string of bids
+        :param asks_json: JSON string of asks
+        :return: Tuple of NumPy arrays (bids, asks)
+        """
+        bids = np.array(json.loads(bids_json), dtype=[('price', float), ('quantity', float)])
+        asks = np.array(json.loads(asks_json), dtype=[('price', float), ('quantity', float)])
+        return bids, asks

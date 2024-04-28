@@ -3,7 +3,9 @@ import asyncio
 import argparse
 import cProfile
 
+from multiprocessing import Process
 from src.logger import setup_logger
+from src.console import Console
 from src.feed import Feed
 from src.core import GAIA
 
@@ -13,7 +15,7 @@ async def main(profiling=False, console=False):
 
     contracts = ["ETH", "BTC", "SOL", "WIF"]
     data_feed = Feed(contracts=contracts, max_depth=10)
-    strategy = asyncio.create_task(GAIA(feed=data_feed, console=console).run())
+    strategy = asyncio.create_task(GAIA(data_feed).run())
     await strategy
 
 
