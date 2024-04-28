@@ -380,14 +380,12 @@ class PGDatabase:
         else:
             self.logger.error("Failed to obtain contract ID for storing OHLC data.")
 
+    @staticmethod
     def json_to_numpy(bids_json: str, asks_json: str) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Convert JSON strings of bids and asks to NumPy arrays.
+        bids_list = json.loads(bids_json)
+        asks_list = json.loads(asks_json)
         
-        :param bids_json: JSON string of bids
-        :param asks_json: JSON string of asks
-        :return: Tuple of NumPy arrays (bids, asks)
-        """
-        bids = np.array(json.loads(bids_json), dtype=[('price', float), ('quantity', float)])
-        asks = np.array(json.loads(asks_json), dtype=[('price', float), ('quantity', float)])
-        return bids, asks
+        bids_array = np.array(bids_list, dtype=float)
+        asks_array = np.array(asks_list, dtype=float)
+
+        return bids_array, asks_array

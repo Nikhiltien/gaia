@@ -63,8 +63,8 @@ class ChartWindow(QWidget):
         self.setup_chart()
     
     def initialize_windows(self):
-        self.bid_history = deque(maxlen=50)
-        self.ask_history = deque(maxlen=50)
+        self.bid_history = deque(maxlen=100)
+        self.ask_history = deque(maxlen=100)
 
     def reset_charts(self):
         """Reset the chart data."""
@@ -95,6 +95,9 @@ class ChartWindow(QWidget):
         self.chart = pg.PlotWidget()
         self.bid_plot = self.chart.plot(pen=pg.mkPen('g', width=2))
         self.ask_plot = self.chart.plot(pen=pg.mkPen('r', width=2))
+        self.chart.showGrid(x=True, y=True, alpha=0.3)
+        self.heatmap_item = pg.ImageItem()
+        self.chart.addItem(self.heatmap_item)
         self.layout().addWidget(self.chart)
 
     def toggle_display_mode(self):
@@ -105,29 +108,55 @@ class ChartWindow(QWidget):
         self.display_mode_button.setText(f"Mode: {self.display_mode.capitalize()}")
 
     def update_orderbook(self, orderbook):
-        """Update the chart with new orderbook data, plotting only the best bid and best ask prices."""
+        """Update the chart with new orderbook data, plotting only the best bid and best ask prices, and update heatmap."""
         bids, asks = orderbook
-        if bids.any() and asks.any():
-            best_bid = max(bids, key=lambda x: x[0])  # Get the highest bid
-            best_ask = min(asks, key=lambda x: x[0])  # Get the lowest ask
-            
-            # Append new data points to the historical prices
-            self.bid_history.append(best_bid[0])
-            self.ask_history.append(best_ask[0])
+        if bids.size > 0 and asks.size > 0:
+            best_bid_price = bids[-1][0]  # Highest bid price
+            best_ask_price = asks[0][0]  # Lowest ask price
+
+            # Append new data points to the historical prices for plotting
+            self.bid_history.append(best_bid_price)
+            self.ask_history.append(best_ask_price)
 
             # Update plot data
-            self.bid_plot.setData(list(range(len(self.bid_history))), list(self.bid_history))
-            self.ask_plot.setData(list(range(len(self.ask_history))), list(self.ask_history))
-            self.chart.autoRange()
+            self.bid_plot.setData(list(range(len(self.bid_history))), self.bid_history)
+            self.ask_plot.setData(list(range(len(self.ask_history))), self.ask_history)
 
-    async def start_chart_updates(self):
-        """Simulate chart updates for demonstration purposes."""
-        y = np.random.normal(size=(100,))
-        while True:
-            y[:-1] = y[1:]  # Shift data
-            y[-1] = np.random.normal()  # Add new data point
-            self.chart.setData(y)
-            await asyncio.sleep(0.1)
+            # Update heatmap
+            self.update_heatmap(bids, asks)
+
+            padding = 0  # 5% padding
+            y_min = bids[0][0] - (bids[0][0] * padding)
+            y_max = asks[-1][0] + (asks[-1][0] * padding)
+            self.chart.setYRange(y_min, y_max)
+
+    def update_heatmap(self, bids, asks):
+        price_max = max(bids[-1][0], asks[0][0])
+        price_min = min(bids[0][0], asks[-1][0])
+        
+        buffer = (price_max - price_min) * 0.01
+        price_min -= buffer
+        price_max += buffer
+
+        num_levels = 20
+        price_range = np.linspace(price_min, price_max, num_levels)
+
+        heatmap_data = np.zeros((num_levels, 1))
+
+        for bid_price, bid_volume in bids:
+            index = np.searchsorted(price_range, bid_price, side='right') - 1
+            index = min(index, num_levels - 1)
+            heatmap_data[index, 0] += bid_volume
+
+        for ask_price, ask_volume in asks:
+            index = np.searchsorted(price_range, ask_price, side='right') - 1
+            index = min(index, num_levels - 1)
+            heatmap_data[index, 0] += ask_volume
+
+        heatmap_norm_data = np.log(heatmap_data + 1)  # Normalizing data
+
+        # Check if transpose is needed based on your plot orientation
+        self.heatmap_item.setImage(np.flipud(heatmap_norm_data), autoLevels=True)
 
 
 class AccountWindow(QWidget):
@@ -191,11 +220,12 @@ class Worker(QObject):
     async def run(self):
         while self.is_active:
             if self.symbol:
-                print(1)
-                # orderbook = self.db.order_books[self.symbol]._unwrap()
-                # if orderbook.size > 0:
-                #     self.orderbook_updated.emit(orderbook)
-            await asyncio.sleep(1)
+                exchange, symbol = self.symbol.split(":")
+                con_id, _ = await self.db.fetch_contract_by_symbol_exchange(symbol, exchange)
+                orderbook = await self.db.fetch_order_book(con_id)
+                orderbook = self.db.json_to_numpy(orderbook[0]['bids'], orderbook[0]['asks'])
+                self.orderbook_updated.emit(orderbook)
+            await asyncio.sleep(0.1)
 
 
 if __name__ == "__main__":

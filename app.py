@@ -5,7 +5,6 @@ import cProfile
 
 from multiprocessing import Process
 from src.logger import setup_logger
-from src.console import Console
 from src.feed import Feed
 from src.core import GAIA
 
