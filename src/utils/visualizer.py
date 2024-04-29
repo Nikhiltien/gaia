@@ -7,6 +7,9 @@ from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.interpolate import griddata
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from numpy.typing import NDArray
 
 class Visualizer:
     def __init__(self):
@@ -44,59 +47,54 @@ class Visualizer:
     def update_data(self, df):
         self.data = df
 
-    def plot_historical_data(self, historical_data=None):
-        """
-        Plot historical OHLC data or line plot from the DataFrame.
-        """
-        if historical_data is None or historical_data.empty:
-            self.logger.warning("No historical data provided or empty DataFrame.")
-            return
+    def plot_candles(self, symbol: str, candles: NDArray):
+        opens = candles[:, 0]
+        highs = candles[:, 1]
+        lows = candles[:, 2]
+        closes = candles[:, 3]
+        volumes = candles[:, 4]
+        timestamps = candles[:, 5]
 
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                            vertical_spacing=0.02, 
-                            subplot_titles=("OHLC", "Volume"), 
-                            row_heights=[0.7, 0.3])
+        # Convert timestamps from ms to datetime for plotting
+        dates = [dt.datetime.utcfromtimestamp(ts / 1000) for ts in timestamps]
 
-        # Convert UNIX timestamp to datetime
-        historical_data['timestamp'] = pd.to_datetime(historical_data['timestamp'], unit='s')
+        df = pd.DataFrame({
+            'Open': opens,
+            'High': highs,
+            'Low': lows,
+            'Close': closes,
+            'Volume': volumes
+        }, index=pd.DatetimeIndex(dates))
 
-        # OHLC trace
-        fig.add_trace(go.Candlestick(x=historical_data['timestamp'],
-                                    open=historical_data['open'],
-                                    high=historical_data['high'],
-                                    low=historical_data['low'],
-                                    close=historical_data['close'],
-                                    name='OHLC'), row=1, col=1)
+        # Setup figure and subplot grid
+        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [3, 1]}, figsize=(10, 8))
+        fig.suptitle(f'{symbol} Candlestick Chart')
+        ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
+        ax2.grid(True, which='both', linestyle='--', linewidth=0.5)
 
-        # Volume trace
-        fig.add_trace(go.Bar(x=historical_data['timestamp'], 
-                            y=historical_data['volume'], 
-                            name='Volume', 
-                            marker_color='blue'), row=2, col=1)
+        # Create candlestick bars for highs and lows
+        colors = ['green' if close >= open_ else 'red' for open_, close in zip(df['Open'], df['Close'])]
+        ax1.bar(df.index, df['High'] - df['Low'], bottom=df['Low'], color=colors, width=0.6/(24*60), linewidth=0)
+        ax1.bar(df.index, df['Close'] - df['Open'], bottom=df['Open'], color=colors, width=0.3/(24*60), linewidth=0)
 
-        start_date = historical_data['timestamp'].min()
-        end_date = historical_data['timestamp'].max()
-        total_days = (end_date - start_date).days
-        tickvals = [start_date + pd.Timedelta(days=i) for i in range(total_days + 1)]
-        ticktext = [t.strftime('%Y-%m-%d') for t in tickvals]
+        # Plot volume bars
+        ax2.bar(df.index, df['Volume'], color='blue', width=0.6/(24*60))
 
-        fig.update_xaxes(
-            tickvals=tickvals,
-            ticktext=ticktext,
-            rangebreaks=[
-                dict(pattern="hour", bounds=[0, 17.5]),
-                dict(bounds=["sat", "mon"])
-            ]
-        )
+        # Formatting dates on the x-axis
+        ax1.xaxis_date()
+        
+        # Set the locator for the major axis to ensure we have 10 even ticks throughout the data range
+        locator = mdates.AutoDateLocator(maxticks=10)
+        formatter = mdates.ConciseDateFormatter(locator)
+        ax1.xaxis.set_major_locator(locator)
+        ax1.xaxis.set_major_formatter(formatter)
+        fig.autofmt_xdate()  # Auto formats the x-axis labels to fit them better
 
-        fig.update_layout(
-            template='plotly_dark',
-            width=1400,
-            height=800,
-            title="Historical Data Visualization"
-        )
+        ax1.set_ylabel('Price')
+        ax2.set_ylabel('Volume')
+        ax2.set_xlabel('Date')
 
-        fig.show()
+        plt.show()
 
     def compute_volatility_surface(self, spot_price, risk_free_rate, option_type, date=None):
         strike_prices = []
@@ -143,13 +141,13 @@ class Visualizer:
                     print(f"Negative option price: {option_price}")
                     continue
 
-                implied_vol = calculate_implied_volatility(
-                    option_type, option_price, spot_price, strike, T, risk_free_rate
-                )
+                # implied_vol = calculate_implied_volatility(
+                #     option_type, option_price, spot_price, strike, T, risk_free_rate
+                # )
 
                 strike_prices.append(strike)
                 time_to_expirations.append(T)
-                implied_volatilities.append(implied_vol)
+                # implied_volatilities.append(implied_vol)
 
         if len(strike_prices) == 0:
             print("No valid strikes found.")

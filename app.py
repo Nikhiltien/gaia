@@ -2,6 +2,7 @@ import uvloop
 import asyncio
 import argparse
 import cProfile
+import src.console as console
 
 from multiprocessing import Process
 from src.logger import setup_logger
@@ -29,14 +30,17 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
 
     profiler = cProfile.Profile() if args.profile else None
-    console = args.console
+    if args.console:
+        # Start the console in a separate process
+        console_process = Process(target=console.main())
+        console_process.start()
 
     try:
         if profiler:
             profiler.enable()
             logging.warn("Running Gaia with profiler!")
 
-        loop.run_until_complete(main(profiling=args.profile, console=console))
+        loop.run_until_complete(main(profiling=args.profile))
 
     except KeyboardInterrupt:
         logging.info("\nShutting down...")
@@ -50,3 +54,6 @@ if __name__ == "__main__":
             profiler.disable()
             profiler.print_stats()
         loop.close()
+
+        if args.console:
+            console_process.join()

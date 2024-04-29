@@ -91,12 +91,20 @@ class ChartWindow(QWidget):
         self.symbol_selector.addItems(formatted_symbols)
 
     def setup_chart(self):
-        """Initialize chart widget with two line plots for bid and ask."""
+        """Initialize chart widget with a heatmap and two line plots for bid and ask."""
         self.chart = pg.PlotWidget()
+        self.layout().addWidget(self.chart)
+
+        # Setup heatmap
+        self.heatmap = pg.ImageItem()
+        colormap = pg.colormap.get('viridis', source='matplotlib')  # Choosing a colormap
+        self.heatmap.setLookupTable(colormap.getLookupTable())
+        self.chart.addItem(self.heatmap)
+
+        # Setup line plots
         self.bid_plot = self.chart.plot(pen=pg.mkPen('g', width=2))
         self.ask_plot = self.chart.plot(pen=pg.mkPen('r', width=2))
         self.chart.showGrid(x=True, y=True, alpha=0.3)
-        self.layout().addWidget(self.chart)
 
     def toggle_display_mode(self):
         """Toggle between different display modes (trades, orderbook, candles)."""
@@ -121,13 +129,35 @@ class ChartWindow(QWidget):
             self.ask_plot.setData(list(range(len(self.ask_history))), self.ask_history)
 
             # Update heatmap
-            # self.update_heatmap(bids, asks)
+            self.update_heatmap(bids, asks)
 
-            padding = 0  # 5% padding
-            y_min = bids[0][0] - (bids[0][0] * padding)
-            y_max = asks[-1][0] + (asks[-1][0] * padding)
+            # Set y-axis range based on bid and ask
+            y_min = bids[0][0]
+            y_max = asks[-1][0]
             self.chart.setYRange(y_min, y_max)
-            
+
+    def update_heatmap(self, bids, asks):
+        """Update the heatmap with new random data, simulating a data flow, scaling to fit bid/ask prices."""
+        # Slide the heatmap data horizontally
+        data = np.roll(self.data, shift=-1, axis=0)
+
+        # Insert new random data at the end of the roll
+        data[-1, :] = np.random.rand(self.data_width)
+
+        # Get the price range to map the heatmap
+        price_min = bids[0][0]
+        price_max = asks[-1][0]
+
+        # Calculate the scale factors for the heatmap to fit this range
+        scale_y = (price_max - price_min) / self.data_height
+        offset_y = price_min - (scale_y / 2)
+
+        # Update the heatmap display
+        self.heatmap.setImage(self.data, levels=(0, 1))
+        self.heatmap.resetTransform()
+        self.heatmap.scale(1, scale_y)  # Scale heatmap to match price range
+        self.heatmap.translate(0, offset_y)  # Offset heatmap to start at the lowest bid
+
 
 class AccountWindow(QWidget):
     def __init__(self):
@@ -187,19 +217,18 @@ class Worker(QObject):
     def update_symbol(self, symbol):
         self.symbol = symbol
 
-    async def run(self):
+    async def run(self, interval=0.1):
         while self.is_active:
             if self.symbol:
                 exchange, symbol = self.symbol.split(":")
                 con_id, _ = await self.db.fetch_contract_by_symbol_exchange(symbol, exchange)
                 orderbook = await self.db.fetch_order_book(con_id)
-                orderbook = self.db.json_to_numpy(orderbook[0]['bids'], orderbook[0]['asks'])
                 self.orderbook_updated.emit(orderbook)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(interval)
 
 
-if __name__ == "__main__":
-    logging = setup_logger(level='INFO', stream=True)
+def main():
+    # logging = setup_logger(level='INFO', stream=True)
     
     app = QApplication(sys.argv)
     event_loop = QEventLoop(app)
@@ -219,3 +248,6 @@ if __name__ == "__main__":
 
     with event_loop:
         event_loop.run_forever()
+
+if __name__ == "__main__":
+    main()

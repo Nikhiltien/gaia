@@ -302,6 +302,37 @@ class PGDatabase:
         else:
             self.logger.error("Failed to store trade data due to missing contract ID.")
 
+    async def fetch_trades(self, contract_id: int, start_time: Optional[int] = None, end_time: Optional[int] = None) -> np.ndarray:
+        """
+        Fetch trade data for a given contract and time range, returning it as a flat NumPy array of floats.
+
+        :param contract_id: Contract identifier
+        :param start_time: Start of the time range as a Unix timestamp (optional)
+        :param end_time: End of the time range as a Unix timestamp (optional)
+        :return: NumPy array of shape [sequence length, 5 (trade_id, side as float, qty, price, timestamp)]
+        """
+        query = """
+            SELECT trade_id, side, qty, price, timestamp
+            FROM MarketTrades
+            WHERE contract_id = $1
+        """
+        conditions = [contract_id]
+
+        if start_time:
+            query += " AND timestamp >= $2"
+            conditions.append(start_time)
+
+        if end_time:
+            query += " AND timestamp <= $3"
+            conditions.append(end_time)
+
+        query += " ORDER BY timestamp"
+
+        async with self.connection() as conn:
+            records = await conn.fetch(query, *conditions)
+            records = [(rec[4], rec[1], rec[3], rec[2]) for rec in records]
+            return np.array(records, dtype=float)
+
     async def store_order_book_data(self, book: np.ndarray, contract: Dict):
         contract_id = await self.insert_contract(contract)
 
@@ -332,34 +363,43 @@ class PGDatabase:
         else:
             self.logger.error("Failed to store order book data due to missing contract ID.")
 
-    async def fetch_order_book(self, contract_id: int, start_time: Optional[int] = None, end_time: Optional[int] = None) -> List[Dict]:
+    async def fetch_order_book(self, contract_id: int, start_time: Optional[int] = None, end_time: Optional[int] = None, num_levels: int = 10) -> List[np.ndarray]:
         """
-        Fetch order book data for a given contract and time range.
+        Fetch order book data for a given contract and time range, returning a list of arrays where each array contains the combined top N levels of bids and asks.
         
         :param contract_id: Contract identifier
         :param start_time: Start of the time range as a Unix timestamp (optional)
-        :param end_time: End of the time range as a Unix timestamp (defaults to current time if None)
-        :return: List of dictionaries containing order book data
+        :param end_time: End of the time range as a Unix timestamp (optional)
+        :param num_levels: Number of price levels to return for bids and asks
+        :return: List of NumPy arrays, each of shape [num_levels * 2, 2]
         """
         query = """
-            SELECT contract_id, bids, asks, timestamp
+            SELECT bids, asks
             FROM LimitOrderBook
             WHERE contract_id = $1
         """
         conditions = [contract_id]
-        
+
         if start_time:
             query += " AND timestamp >= $2"
             conditions.append(start_time)
-        
+
         if end_time:
             query += " AND timestamp <= $3"
             conditions.append(end_time)
-        else:
-            query += " ORDER BY timestamp DESC LIMIT 1"  # Fetches the most recent snapshot if end_time is not provided
+
+        query += " ORDER BY timestamp"
 
         async with self.connection() as conn:
-            return await conn.fetch(query, *conditions)
+            records = await conn.fetch(query, *conditions)
+            order_book_snapshots = []
+
+            for record in records:
+                bids, asks = self.json_to_numpy(record['bids'], record['asks'])
+                combined = np.vstack((bids[:num_levels, :], asks[:num_levels, :]))
+                order_book_snapshots.append(combined)
+
+            return np.array(order_book_snapshots)
 
     async def store_klines_data(self, ohlc_data: np.ndarray, contract: dict):
         contract_id = await self.insert_contract(contract)
@@ -379,6 +419,36 @@ class PGDatabase:
             self.logger.debug(f"Successfully stored OHLC data for contract {contract}.")
         else:
             self.logger.error("Failed to obtain contract ID for storing OHLC data.")
+
+    async def fetch_candles(self, contract_id: int, start_time: Optional[int] = None, end_time: Optional[int] = None) -> np.ndarray:
+        """
+        Fetch OHLC data for a given contract and time range, returning it as a flat NumPy array of floats.
+        
+        :param contract_id: Contract identifier
+        :param start_time: Start of the time range as a Unix timestamp (optional)
+        :param end_time: End of the time range as a Unix timestamp (optional)
+        :return: NumPy array of shape [sequence length, 6 (open, high, low, close, volume, timestamp)]
+        """
+        query = """
+            SELECT open, high, low, close, volume, timestamp
+            FROM HistoricalData
+            WHERE contract_id = $1
+        """
+        conditions = [contract_id]
+
+        if start_time:
+            query += " AND timestamp >= $2"
+            conditions.append(start_time)
+
+        if end_time:
+            query += " AND timestamp <= $3"
+            conditions.append(end_time)
+
+        query += " ORDER BY timestamp"
+
+        async with self.connection() as conn:
+            records = await conn.fetch(query, *conditions)
+            return np.array(records, dtype=float)
 
     @staticmethod
     def json_to_numpy(bids_json: str, asks_json: str) -> Tuple[np.ndarray, np.ndarray]:
