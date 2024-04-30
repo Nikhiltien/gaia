@@ -65,7 +65,7 @@ def calculate_bollinger_bands(klines: NDArray, length: int, multiplier: float):
     upper_band = ema_values + (std_dev * multiplier)
     lower_band = ema_values - (std_dev * multiplier)
 
-    return upper_band[-1], lower_band[-1]
+    return upper_band, lower_band
 
 @njit(cache=True)
 def ema(arr_in: NDArray, window: int, alpha: float=0) -> NDArray:

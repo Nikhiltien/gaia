@@ -363,18 +363,18 @@ class PGDatabase:
         else:
             self.logger.error("Failed to store order book data due to missing contract ID.")
 
-    async def fetch_order_book(self, contract_id: int, start_time: Optional[int] = None, end_time: Optional[int] = None, num_levels: int = 10) -> List[np.ndarray]:
+    async def fetch_order_book(self, contract_id: int, start_time: int = None, end_time: int = None, num_levels: int = 10):
         """
-        Fetch order book data for a given contract and time range, returning a list of arrays where each array contains the combined top N levels of bids and asks.
+        Fetch order book data for a given contract and time range, returning a list of tuples where each tuple contains a timestamp and an array with the combined top N levels of bids and asks.
         
         :param contract_id: Contract identifier
         :param start_time: Start of the time range as a Unix timestamp (optional)
         :param end_time: End of the time range as a Unix timestamp (optional)
         :param num_levels: Number of price levels to return for bids and asks
-        :return: List of NumPy arrays, each of shape [num_levels * 2, 2]
+        :return: List of tuples, each containing a timestamp and a NumPy array of shape [num_levels * 2, 2]
         """
         query = """
-            SELECT bids, asks
+            SELECT timestamp, bids, asks
             FROM LimitOrderBook
             WHERE contract_id = $1
         """
@@ -395,11 +395,12 @@ class PGDatabase:
             order_book_snapshots = []
 
             for record in records:
+                timestamp = record['timestamp']
                 bids, asks = self.json_to_numpy(record['bids'], record['asks'])
                 combined = np.vstack((bids[:num_levels, :], asks[:num_levels, :]))
-                order_book_snapshots.append(combined)
+                order_book_snapshots.append((timestamp, combined))
 
-            return np.array(order_book_snapshots)
+            return np.array(order_book_snapshots, dtype=object)
 
     async def store_klines_data(self, ohlc_data: np.ndarray, contract: dict):
         contract_id = await self.insert_contract(contract)
@@ -412,25 +413,27 @@ class PGDatabase:
                     """
                     INSERT INTO HistoricalData (contract_id, open, high, low, close, volume, timestamp)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (contract_id, timestamp) DO NOTHING
+                    ON CONFLICT (contract_id, timestamp) DO UPDATE
+                    SET open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low, 
+                        close = EXCLUDED.close, volume = EXCLUDED.volume
                     """,
                     contract_id, open_price, high, low, close, volume, timestamp
                 )
-            self.logger.debug(f"Successfully stored OHLC data for contract {contract}.")
+            self.logger.debug(f"Successfully upserted OHLC data for contract {contract}.")
         else:
             self.logger.error("Failed to obtain contract ID for storing OHLC data.")
 
-    async def fetch_candles(self, contract_id: int, start_time: Optional[int] = None, end_time: Optional[int] = None) -> np.ndarray:
+    async def fetch_candles(self, contract_id: int, start_time: int = None, end_time: int = None) -> np.ndarray:
         """
         Fetch OHLC data for a given contract and time range, returning it as a flat NumPy array of floats.
         
         :param contract_id: Contract identifier
         :param start_time: Start of the time range as a Unix timestamp (optional)
         :param end_time: End of the time range as a Unix timestamp (optional)
-        :return: NumPy array of shape [sequence length, 6 (open, high, low, close, volume, timestamp)]
+        :return: NumPy array of shape [sequence length, 6 (timestamp, open, high, low, close, volume)]
         """
         query = """
-            SELECT open, high, low, close, volume, timestamp
+            SELECT timestamp, open, high, low, close, volume
             FROM HistoricalData
             WHERE contract_id = $1
         """

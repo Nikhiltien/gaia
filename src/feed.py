@@ -225,7 +225,7 @@ class Feed:
                     store = True
 
             upper_band, lower_band = calculate_bollinger_bands(unwrapped, length=20, multiplier=1)
-            kline = np.append(kline, [upper_band, lower_band])
+            kline = np.append(kline, [upper_band[-1], lower_band[-1]])
         else:
             kline = np.append(kline, [0, 0])
 

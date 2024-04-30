@@ -48,12 +48,14 @@ class Visualizer:
         self.data = df
 
     def plot_candles(self, symbol: str, candles: NDArray):
-        opens = candles[:, 0]
-        highs = candles[:, 1]
-        lows = candles[:, 2]
-        closes = candles[:, 3]
-        volumes = candles[:, 4]
-        timestamps = candles[:, 5]
+        timestamps = candles[:, 0]
+        opens = candles[:, 1]
+        highs = candles[:, 2]
+        lows = candles[:, 3]
+        closes = candles[:, 4]
+        volumes = candles[:, 5]
+        upper = candles[:, 6]
+        lower = candles[:, 7]
 
         # Convert timestamps from ms to datetime for plotting
         dates = [dt.datetime.utcfromtimestamp(ts / 1000) for ts in timestamps]
@@ -63,7 +65,9 @@ class Visualizer:
             'High': highs,
             'Low': lows,
             'Close': closes,
-            'Volume': volumes
+            'Volume': volumes,
+            'Upper Band': upper,
+            'Lower Band': lower
         }, index=pd.DatetimeIndex(dates))
 
         # Setup figure and subplot grid
@@ -77,22 +81,28 @@ class Visualizer:
         ax1.bar(df.index, df['High'] - df['Low'], bottom=df['Low'], color=colors, width=0.6/(24*60), linewidth=0)
         ax1.bar(df.index, df['Close'] - df['Open'], bottom=df['Open'], color=colors, width=0.3/(24*60), linewidth=0)
 
+        # Plot Bollinger Bands
+        ax1.plot(df.index, df['Upper Band'], label='Bollinger Bands', color='blue', linewidth=1.5)
+        ax1.plot(df.index, df['Lower Band'], color='blue', linewidth=1.5)
+
         # Plot volume bars
         ax2.bar(df.index, df['Volume'], color='blue', width=0.6/(24*60))
 
         # Formatting dates on the x-axis
         ax1.xaxis_date()
-        
-        # Set the locator for the major axis to ensure we have 10 even ticks throughout the data range
         locator = mdates.AutoDateLocator(maxticks=10)
         formatter = mdates.ConciseDateFormatter(locator)
         ax1.xaxis.set_major_locator(locator)
         ax1.xaxis.set_major_formatter(formatter)
         fig.autofmt_xdate()  # Auto formats the x-axis labels to fit them better
 
+        # Set labels and titles
         ax1.set_ylabel('Price')
         ax2.set_ylabel('Volume')
         ax2.set_xlabel('Date')
+
+        # Add legend to distinguish plotted lines
+        ax1.legend()
 
         plt.show()
 
