@@ -134,7 +134,7 @@ class PGDatabase:
         
     async def connect(self, **kwargs):
         user = kwargs.get('user')
-        password = kwargs.get('password', '')  # Password optional
+        password = kwargs.get('key', '')  # Password optional
         database = kwargs.get('database')
         host = kwargs.get('host')
         port = kwargs.get('port')

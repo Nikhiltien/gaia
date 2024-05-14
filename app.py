@@ -38,7 +38,7 @@ if __name__ == "__main__":
     try:
         if profiler:
             profiler.enable()
-            logging.warn("Running Gaia with profiler!")
+            logging.warning("Running Gaia with profiler!")
 
         loop.run_until_complete(main(profiling=args.profile))
 

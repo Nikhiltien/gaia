@@ -1,9 +1,10 @@
 TimescaleDB:
-  # type: PSQL
+  type: PSQL
   user: nikhiltien
   database: gaea
   host: 127.0.0.1
   port: 5432
+  key: Null
 
 HyperLiquid:
   type: WEB3

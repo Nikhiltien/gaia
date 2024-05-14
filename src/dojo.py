@@ -1,10 +1,11 @@
 import torch
+import logging
 import numpy as np
 
-from datetime import datetime
+from typing import List, Tuple, Dict
 from typing import Tuple
 from numpy.typing import NDArray
-from src.utils.math import trades_imbalance, calculate_bollinger_bands
+from src.utils.math import calculate_bollinger_bands, calculate_realized_volatility
 from src.database.db_manager import PGDatabase
 
 class Dojo():
@@ -12,7 +13,8 @@ class Dojo():
         self.db = database
 
     async def get_training_data(self, symbol: str, exchange: str, startTime: int = None, endTime: int = None, 
-                              interval: float = None, sequence_length: int = None, batches: float = None):
+                              interval: float = None, sequence_length: int = None, batches: float = None
+                              ) -> List[Tuple[NDArray, NDArray]]:
         
         conId, _ = await self.db.fetch_contract_by_symbol_exchange(symbol, exchange)
         book = await self.db.fetch_order_book(conId, start_time=startTime, end_time=endTime)
@@ -32,7 +34,27 @@ class Dojo():
         final_timeseries = self.convert_timestamps_to_deltas(z_time_series)
         final_candles = self.convert_timestamps_to_deltas(z_candles)
 
-        return final_timeseries, final_candles
+        return self.generate_batches(final_timeseries, final_candles)
+
+    @staticmethod
+    def generate_batches(time_series: NDArray, candles: NDArray) -> List[Tuple[NDArray, NDArray]]:
+        batches = []
+        sequence_length = 15  # Tenure of 15 candles as specified
+        num_batches = len(candles) - sequence_length + 1
+        
+        for i in range(num_batches):
+            candle_batch = candles[i:i + sequence_length]
+            ts_start = candle_batch[-2, 0]  # Timestamp of the 14th candle
+            ts_end = candle_batch[-1, 0]  # Timestamp of the 15th candle
+
+            # Filter time series data based on the timestamp interval
+            ts_batch = time_series[(time_series[:, 0] >= ts_start) & (time_series[:, 0] <= ts_end)]
+            
+            # Append the batch as a tuple consisting of the candle data and corresponding time series data
+            batches.append((candle_batch, ts_batch))
+
+        logging.info(f"{len(batches)} batches of training data generated from dataset.")
+        return batches
 
     @staticmethod
     def convert_timestamps_to_deltas(data: np.ndarray) -> np.ndarray:

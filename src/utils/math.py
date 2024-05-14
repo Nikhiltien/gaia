@@ -189,3 +189,28 @@ def get_wmid(bba: NDArray) -> float:
     """
     imb = bba[0, 1] / (bba[0, 1] + bba[1, 1])
     return bba[0, 0] * imb + bba[1, 0] * (1 - imb)
+
+def calculate_realized_volatility(series: NDArray):
+    """
+    Calculate the realized volatility from a numpy array of prices at irregular time intervals.
+    
+    Args:
+    data (np.array): Array where each element is [timedelta in milliseconds, price]
+    
+    Returns:
+    float: The realized volatility calculated as the square root of the weighted sum of squared log returns.
+    """
+    # Extract timedeltas and prices from the data
+    timedeltas = series[1:, 0] - series[:-1, 0]
+    prices = series[:, 1]
+    
+    # Calculate log returns
+    log_returns = np.log(prices[1:] / prices[:-1])
+    
+    # Calculate weighted squared log returns
+    weighted_squared_returns = (log_returns**2) * (timedeltas / np.mean(timedeltas))
+    
+    # Calculate realized volatility
+    realized_volatility = np.sqrt(np.sum(weighted_squared_returns))
+    
+    return realized_volatility

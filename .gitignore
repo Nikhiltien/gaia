@@ -169,3 +169,4 @@ keys
 logs
 src/models/tet/Tet.pth
 src/models/tet/mixture_of_experts.pth
+etc/config.yml
