@@ -23,8 +23,8 @@ async def main():
     await database.start(config)
 
     dojo = Dojo(database)
-    start = datetime_to_unix("20240428 14:00:00")
-    end = datetime_to_unix("20240428 16:00:00")
+    start = datetime_to_unix("20240514 17:00:00")
+    end = datetime_to_unix("20240514 19:00:00")
     symbol, exchange = "ETH", "HYPERLIQUID"
     batch = await dojo.get_training_data(symbol=symbol, 
                                                          exchange=exchange, 
@@ -32,7 +32,7 @@ async def main():
                                                          endTime=end)
     # Visualizer().plot_candles(symbol, np.array(candles))
 
-    print(batch[-1][0].shape, batch[-1][1].shape)
+    print(batch[-2][0], batch[-2][1])
     # print(batch[1][1])
 
 if __name__ == "__main__":

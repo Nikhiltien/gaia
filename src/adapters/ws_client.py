@@ -92,7 +92,7 @@ class WebsocketClient():
 
     def reconnect(self):
         self.logger.info("Attempting to reconnect...")
-        self._connect()
+        self.connect()
 
     def _handle_message(self, evt):
         if self._is_binary:
