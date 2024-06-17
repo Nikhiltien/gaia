@@ -86,7 +86,7 @@ class GAIA:
 
             # if not self.feed.ready:
             #     continue
-            
+
             break
 
     def train_agent(num_episodes, env, agent):

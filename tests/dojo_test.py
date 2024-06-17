@@ -32,7 +32,7 @@ async def main():
                                                          endTime=end)
     # Visualizer().plot_candles(symbol, np.array(candles))
 
-    print(batch[-2][0], batch[-2][1])
+    print(batch[-2][0].shape, batch[-2][1].shape)
     # print(batch[1][1])
 
 if __name__ == "__main__":

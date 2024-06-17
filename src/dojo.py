@@ -25,7 +25,6 @@ class Dojo():
         trades = self.process_trades(trades)
 
         book, trades = self.align_snapshots(book, trades)
-        book, trades = self.align_book_to_trades(book, trades)
 
         time_series = self.merge_data(book, trades)
         z_time_series = self.normalize_prices(time_series)
@@ -134,10 +133,6 @@ class Dojo():
         # Sort trades to ensure they are in the same order as book snapshots
         trades = trades[np.argsort(trades[:, 0])]
 
-        return book, trades
-
-    @staticmethod
-    def align_book_to_trades(book: NDArray, trades: NDArray) -> Tuple[NDArray, NDArray]:
         trade_timestamps = trades[:, 0]
         aligned_books = []
         aligned_trades = []
