@@ -1,2 +1,2 @@
-# gaia
-Market maker using machine learning.
+# volta
+Market maker trained with Deep Q-Network.
